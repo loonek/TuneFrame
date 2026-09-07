@@ -19,24 +19,25 @@ NP_PERIOD = 0.3
 _latest_np = None
 _np_lock = threading.Lock()
 _cmd_out = queue.Queue()
+_feed_out = queue.Queue()
 _stop = threading.Event()
 
-
+# Saves latest "now playing" under lock
 def set_latest_np(np):
     global _latest_np
     with _np_lock:
         _latest_np = np
 
-
+# Loads latest -||-
 def get_latest_np():
     with _np_lock:
         return _latest_np
 
-
+# Removes "cover_url" from the np dict
 def strip_cover(np):
     return {k: v for k, v in np.items() if k != "cover_url"}
 
-
+# Converts image from the url to RGB565 format
 def url_to_rgb565(url, size=ART):
     with urllib.request.urlopen(url, timeout=5) as r:
         data = r.read()
@@ -50,7 +51,7 @@ def url_to_rgb565(url, size=ART):
         out[2 * i + 1] = (v >> 8) & 0xFF
     return bytes(out)
 
-
+# Waits for cover data confirmation from the board
 def wait_ok(ser, timeout=1.0):
     deadline = time.monotonic() + timeout
     buf = bytearray()
@@ -70,7 +71,27 @@ def wait_ok(ser, timeout=1.0):
             time.sleep(0.002)
     return False
 
+# Streams feed to serial as fb/fs/fi/fe
+def send_feed(ser, feed):
+    try:
+        ser.write(b'{"t":"fb"}\n')
+        for sec in feed.get("sections", []):
+            head = {"t": "fs", "title": sec.get("title", "")}
+            ser.write((json.dumps(head, ensure_ascii=False) + "\n").encode("utf-8"))
+            for it in sec.get("items", []):
+                row = {
+                    "t": "fi",
+                    "title": it.get("title", ""),
+                    "sub": it.get("sub", ""),
+                    "id": it.get("id", ""),
+                    "k": it.get("kind", ""),
+                }
+                ser.write((json.dumps(row, ensure_ascii=False) + "\n").encode("utf-8"))
+        ser.write(b'{"t":"fe"}\n')
+    except pyserial.SerialTimeoutException:
+        pass
 
+# Sends the cover: header + RGB565 pixels in chunks, waiting for ack
 def send_cover(ser, url):
     try:
         out = url_to_rgb565(url)
@@ -87,7 +108,7 @@ def send_cover(ser, url):
     except pyserial.SerialTimeoutException:
         return False
 
-
+# Serial thread: queues incoming cmds, pushes np, streams feed, sends cover on track change
 def serial_worker(port, baud):
     ser = pyserial.Serial()
     ser.port = port
@@ -121,6 +142,13 @@ def serial_worker(port, baud):
                 except json.JSONDecodeError:
                     pass
 
+        try:
+            feed = _feed_out.get_nowait()
+        except queue.Empty:
+            feed = None
+        if feed:
+            send_feed(ser, feed)
+
         np = get_latest_np()
         now = time.monotonic()
         if np and now - last_push >= NP_PERIOD:
@@ -143,7 +171,7 @@ def serial_worker(port, baud):
 
 _ws_clients = set()
 
-
+# Connects with the browser extension
 async def ws_handler(ws):
     _ws_clients.add(ws)
     print("[bridge] extension connected", file=sys.stderr)
@@ -155,11 +183,13 @@ async def ws_handler(ws):
                 continue
             if msg.get("t") == "np":
                 set_latest_np(msg)
+            elif msg.get("t") == "feed":
+                _feed_out.put(msg)
     finally:
         _ws_clients.discard(ws)
         print("[bridge] extension disconnected", file=sys.stderr)
 
-
+# Sends esp commands to the browser extension
 async def pump_commands():
     while True:
         try:

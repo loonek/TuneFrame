@@ -1,8 +1,9 @@
 #pragma once
 
+#include <lvgl.h>
 #include <ArduinoJson.h>
 
-void np_screen_create();
+lv_obj_t *np_screen_create();
 void np_apply(JsonDocument &doc);
 void np_tick();
 

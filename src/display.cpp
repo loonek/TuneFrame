@@ -14,10 +14,11 @@ static Arduino_GFX *gfx = new Arduino_NV3041A(
 static TAMC_GT911 touch = TAMC_GT911(
     TOUCH_SDA, TOUCH_SCL, TOUCH_INT, TOUCH_RST, LCD_WIDTH, LCD_HEIGHT);
 
-static lv_disp_draw_buf_t draw_buf;
-static lv_color_t        *buf1;
-static const uint32_t     BUF_LINES = 40;
+static lv_disp_draw_buf_t draw_buf; // Display buffer
+static lv_color_t        *buf1;     // Pointer to the first buffer
+static const uint32_t     BUF_LINES = 40; // Number of lines in the buffer
 
+// Send a rectangle of pixels to the display
 static void flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p)
 {
     uint32_t w = (area->x2 - area->x1 + 1);
@@ -26,6 +27,7 @@ static void flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *colo
     lv_disp_flush_ready(drv);
 }
 
+// Touch read callback function to read touch input
 static void touch_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
     touch.read();
@@ -41,6 +43,7 @@ static void touch_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
     }
 }
 
+// Initialize the display and touch input
 void display_begin()
 {
     pinMode(LCD_BL, OUTPUT);
@@ -71,6 +74,7 @@ void display_begin()
     lv_indev_drv_register(&indev_drv);
 }
 
+// Call this function periodically to handle LVGL tasks
 void display_tick()
 {
     lv_timer_handler();

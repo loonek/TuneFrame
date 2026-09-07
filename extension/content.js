@@ -1,3 +1,5 @@
+// Translates between the site's postMessage and the background (service worker)
+
 const port = chrome.runtime.connect();
 
 window.addEventListener("message", (e) =>

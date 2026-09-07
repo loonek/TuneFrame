@@ -2,13 +2,10 @@ const WS_URL = "ws://localhost:8765";
 let ws = null;
 let contentPort = null;
 
+// Connects ws://localhost:8765 with the bridge. Acts as a relay
 function connectWS()
 {
   ws = new WebSocket(WS_URL);
-  ws.onmessage = (ev) =>
-  {
-    if (contentPort) contentPort.postMessage(ev.data);
-  };
   ws.onclose = () =>
   {
     ws = null;
@@ -18,6 +15,21 @@ function connectWS()
   {
     try { ws.close(); } catch (e) {}
   };
+  ws.onmessage = (ev) =>
+  {
+    if (!contentPort) return;
+    try
+    {
+      const msg = JSON.parse(ev.data);
+      if (msg.t === "cmd" && msg.a === "search" && contentPort.sender && contentPort.sender.tab)
+      {
+        chrome.tabs.update(contentPort.sender.tab.id, { active: true });
+        chrome.windows.update(contentPort.sender.tab.windowId, { focused: true });
+      }
+    }
+    catch (e) {}
+    contentPort.postMessage(ev.data);
+  }
 }
 
 connectWS();

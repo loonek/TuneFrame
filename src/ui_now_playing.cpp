@@ -3,6 +3,8 @@
 #include <ArduinoJson.h>
 
 #include "ui_now_playing.h"
+#include "ui_home.h"
+#include "ui_nav.h"
 #include "link.h"
 
 LV_FONT_DECLARE(opensans_16);
@@ -26,17 +28,23 @@ static bool     np_playing = false;
 static uint32_t np_sync_ms = 0;
 static int      np_last_reported = -1;
 static char     np_prev_title[128] = "- - -";
+static char     np_prev_vid[64] = "";
+static int      song_start = 0;
+static bool     np_wait_reset = false;
 
+// Formats time in seconds into "minutes:seconds"
 static void fmt_time(char *out, int total)
 {
     sprintf(out, "%d:%02d", total / 60, total % 60);
 }
 
+// Callback for buttons, sends the associated command to the host
 static void btn_cmd_cb(lv_event_t *e)
 {
     link_send_cmd((const char *)lv_event_get_user_data(e));
 }
 
+// Creates flat circular button with a symbol and associated action
 static lv_obj_t *make_ctrl_btn(lv_obj_t *parent, const char *symbol, const char *action, lv_coord_t size)
 {
     lv_obj_t *btn = lv_btn_create(parent);
@@ -55,12 +63,21 @@ static lv_obj_t *make_ctrl_btn(lv_obj_t *parent, const char *symbol, const char 
     return lbl;
 }
 
-void np_screen_create()
+// Recognizes swipe down to navigate home
+static void np_gesture_cb(lv_event_t *e)
 {
-    lv_obj_t *scr = lv_scr_act();
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+    if (dir == LV_DIR_BOTTOM) lv_scr_load(g_scr_home);
+}
+
+// Build the "now playing" screen, returns the screen as an object
+lv_obj_t *np_screen_create()
+{
+    lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, lv_color_hex(0x0F0F0F), 0);
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_pad_all(scr, 14, 0);
+    lv_obj_add_event_cb(scr, np_gesture_cb, LV_EVENT_GESTURE, NULL);
 
     lv_coord_t screen_h  = lv_disp_get_ver_res(NULL);
     lv_coord_t btn_sz    = screen_h / 6;
@@ -147,8 +164,10 @@ void np_screen_create()
     lv_label_set_text(ui_vol, "50%");
 
     make_ctrl_btn(row2, LV_SYMBOL_VOLUME_MAX, "vol_up", btn_sz);
+    return scr;
 }
 
+// Validates the size, sets the header for the cover image descriptor, and returns the buffer for pixels.
 uint8_t *np_art_begin(int w, int h)
 {
     if (w <= 0 || h <= 0 || w > ART_MAX || h > ART_MAX) return nullptr;
@@ -158,12 +177,14 @@ uint8_t *np_art_begin(int w, int h)
     return art_buf;
 }
 
+// Link the received buffer as the source for the cover image.
 void np_art_end()
 {
     lv_obj_set_size(ui_cover, art_dsc.header.w, art_dsc.header.h);
     lv_img_set_src(ui_cover, &art_dsc);
 }
 
+// Processes changes in the now playing data, and updates them.
 void np_apply(JsonDocument &doc)
 {
     const char *status = doc["status"] | "none";
@@ -172,27 +193,64 @@ void np_apply(JsonDocument &doc)
         lv_label_set_text(ui_title, "Nothing playing");
         lv_label_set_text(ui_artist, "");
         lv_label_set_text(ui_pp_icon, LV_SYMBOL_PLAY);
+        home_set_np("Nothing playing", "", false);
         np_playing = false;
         return;
     }
 
-    int reported = doc["pos"] | 0;
+    int reported      = doc["pos"] | 0;
+    int rdur          = doc["dur"] | 0;
     const char *title = doc["title"] | "- - -";
-    if (strcmp(title, np_prev_title) != 0)
+    const char *vid   = doc["vid"] | "";
+
+    bool new_track = strcmp(vid, np_prev_vid) != 0;
+    bool new_title = strcmp(title, np_prev_title) != 0;
+
+    if (new_track)
     {
-        strncpy(np_prev_title, title, sizeof(np_prev_title));
-        np_prev_title[sizeof(np_prev_title) - 1] = '\0';
-        lv_label_set_text(ui_title, title);
+        bool first = (np_prev_vid[0] == '\0');
+        strncpy(np_prev_vid, vid, sizeof(np_prev_vid));
+        np_prev_vid[sizeof(np_prev_vid) - 1] = '\0';
+        song_start = 0;
+        np_pos = 0;
+        np_sync_ms = millis();
+        np_last_reported = reported;
+        np_wait_reset = !first && reported > 2;
+    }
+    else if (new_title)
+    {
+        song_start = (rdur == np_dur) ? reported : 0;
         np_pos = 0;
         np_sync_ms = millis();
         np_last_reported = reported;
     }
-    lv_label_set_text(ui_artist, doc["artist"] | "-");
-    np_dur     = doc["dur"] | 0;
+
+    if (new_title)
+    {
+        strncpy(np_prev_title, title, sizeof(np_prev_title));
+        np_prev_title[sizeof(np_prev_title) - 1] = '\0';
+        lv_label_set_text(ui_title, title);
+    }
+
+    np_dur = rdur;
+    if (song_start > np_dur) song_start = 0;
+    const char *artist = doc["artist"] | "-";
+    lv_label_set_text(ui_artist, artist);
     np_playing = (strcmp(status, "playing") == 0);
     lv_label_set_text(ui_pp_icon, np_playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
+    home_set_np(title, artist, np_playing);
 
-    if (reported != np_last_reported)
+    if (np_wait_reset)
+    {
+        if (reported < np_last_reported)
+        {
+            np_wait_reset = false;
+            np_pos = reported;
+            np_sync_ms = millis();
+        }
+        np_last_reported = reported;
+    }
+    else if (reported != np_last_reported)
     {
         np_pos = reported;
         np_sync_ms = millis();
@@ -208,17 +266,21 @@ void np_apply(JsonDocument &doc)
     }
 }
 
+// Interpolations between data updates.
 void np_tick()
 {
-    int pos = np_pos;
+    int pos = np_pos - song_start;
+    if (pos < 0) pos = 0;
     if (np_playing) pos += (millis() - np_sync_ms) / 1000;
-    if (pos > np_dur) pos = np_dur;
+    int dur = np_dur - song_start;
+    if (dur < 0) dur = 0;
+    if (pos > dur) pos = dur;
 
-    if (np_dur > 0) lv_bar_set_value(ui_bar, (pos * 100) / np_dur, LV_ANIM_OFF);
+    if (dur > 0) lv_bar_set_value(ui_bar, (pos * 100) / dur, LV_ANIM_OFF);
 
     char a[8], b[8], out[20];
     fmt_time(a, pos);
-    fmt_time(b, np_dur);
+    fmt_time(b, dur);
     sprintf(out, "%s / %s", a, b);
     lv_label_set_text(ui_time, out);
 }

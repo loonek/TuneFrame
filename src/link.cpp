@@ -3,14 +3,19 @@
 
 #include "link.h"
 
-static char         line_buf[512];
-static size_t       line_len = 0;
-static np_handler_t np_cb = nullptr;
-static art_begin_t  art_begin_cb = nullptr;
-static art_end_t    art_end_cb = nullptr;
+static char         line_buf[512];              // Buffer to store incoming line from Serial
+static size_t       line_len = 0;               // Length of the current line in the buffer
+static np_handler_t np_cb = nullptr;            // Callback for "now playing" events
+static art_begin_t  art_begin_cb = nullptr;     // Callback for artwork begin
+static art_end_t    art_end_cb = nullptr;       // Callback for artwork end
+static feed_begin_t feed_begin_cb = nullptr;    // Callback for feed begin
+static feed_sec_t   feed_sec_cb = nullptr;      // Callback for feed section
+static feed_item_t  feed_item_cb = nullptr;     // Callback for feed item
+static feed_end_t   feed_end_cb = nullptr;      // Callback for feed end
 
-static const size_t ART_CHUNK = 4096;
+static const size_t ART_CHUNK = 4096;           // Size of chunks to read artwork data in
 
+// Opens serial comms.
 void link_begin(unsigned long baud)
 {
     Serial.setRxBufferSize(8192);
@@ -18,17 +23,29 @@ void link_begin(unsigned long baud)
     Serial.setTimeout(1000);
 }
 
+// Sets the callback for "now playing" events
 void link_on_now_playing(np_handler_t cb)
 {
     np_cb = cb;
 }
 
+// Sets the callbacks for artwork events
 void link_on_art(art_begin_t begin, art_end_t end)
 {
     art_begin_cb = begin;
     art_end_cb = end;
 }
 
+// Sets the callbacks for feed events
+void link_on_feed(feed_begin_t begin, feed_sec_t sec, feed_item_t item, feed_end_t end)
+{
+    feed_begin_cb = begin;
+    feed_sec_cb = sec;
+    feed_item_cb = item;
+    feed_end_cb = end;
+}
+
+// Receives artwork data in chunks and calls the end callback when done
 static void receive_art(uint8_t *buf, size_t total)
 {
     size_t got = 0;
@@ -45,6 +62,7 @@ static void receive_art(uint8_t *buf, size_t total)
     if (got == total && art_end_cb) art_end_cb();
 }
 
+// Processes incoming serial data, looking for complete JSON messages and dispatching them to the appropriate callbacks
 void link_task()
 {
     while (Serial.available())
@@ -71,6 +89,22 @@ void link_task()
                         receive_art(buf, (size_t)w * h * 2);
                     }
                 }
+                else if (strcmp(t, "fb") == 0 && feed_begin_cb)
+                {
+                    feed_begin_cb();
+                }
+                else if (strcmp(t, "fs") == 0 && feed_sec_cb)
+                {
+                    feed_sec_cb(doc["title"] | "");
+                }
+                else if (strcmp(t, "fi") == 0 && feed_item_cb)
+                {
+                    feed_item_cb(doc["title"] | "", doc["sub"] | "", doc["id"] | "", doc["k"] | "");
+                }
+                else if (strcmp(t, "fe") == 0 && feed_end_cb)
+                {
+                    feed_end_cb();
+                }
             }
             line_len = 0;
         }
@@ -81,9 +115,20 @@ void link_task()
     }
 }
 
+// Sends a command to the host
 void link_send_cmd(const char *action)
 {
     Serial.print("{\"t\":\"cmd\",\"a\":\"");
     Serial.print(action);
+    Serial.println("\"}");
+}
+
+// Sends a command to the host to play a specific item
+void link_send_play(const char *id, const char *kind)
+{
+    Serial.print("{\"t\":\"cmd\",\"a\":\"play\",\"id\":\"");
+    Serial.print(id);
+    Serial.print("\",\"k\":\"");
+    Serial.print(kind);
     Serial.println("\"}");
 }
