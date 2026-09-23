@@ -18,12 +18,14 @@ ART_CHUNK = 4096
 NP_PERIOD = 0.3
 THUMB = 96
 FEED_MAX = 64
+QUEUE_MAX = 50
 
 _latest_np = None
 _np_lock = threading.Lock()
 _cmd_out = queue.Queue()
 _feed_out = queue.Queue()
 _stop = threading.Event()
+_queue_out = queue.Queue()
 
 # Saves latest "now playing" under lock
 def set_latest_np(np):
@@ -94,7 +96,7 @@ def send_feed(ser, feed):
     try:
         ser.write(b'{"t":"fb"}\n')
         for sec in feed.get("sections", []):
-            head = {"t": "fs", "title": sec.get("title", "")}
+            head = {"t": "fs", "title": sec.get("title", ""), "k": sec.get("kind", "")}
             ser.write((json.dumps(head, ensure_ascii=False) + "\n").encode("utf-8"))
             for it in sec.get("items", []):
                 row = {
@@ -118,6 +120,24 @@ def send_feed(ser, feed):
             if url:
                 send_feed_thumb(ser, idx, url)
             idx += 1
+
+# Streams the play queue to serial as qb/qi/qe
+def send_queue(ser, q):
+    try:
+        ser.write(b'{"t":"qb"}\n')
+        for i, it in enumerate(q.get("items", [])):
+            if i >= QUEUE_MAX:
+                break
+            row = {
+                "t": "qi",
+                "title": it.get("title", ""),
+                "sub": it.get("sub", ""),
+                "cur": bool(it.get("cur", False)),
+            }
+            ser.write((json.dumps(row, ensure_ascii=False) + "\n").encode("utf-8"))
+        ser.write(b'{"t":"qe"}\n')
+    except pyserial.SerialTimeoutException:
+        return
 
 # Sends the cover: header + RGB565 pixels in chunks, waiting for ack
 def send_cover(ser, url):
@@ -232,6 +252,13 @@ def serial_worker(port, baud, tcp):
         if feed:
             send_feed(ser, feed)
 
+        try:
+            q = _queue_out.get_nowait()
+        except queue.Empty:
+            q = None
+        if q:
+            send_queue(ser, q)
+
         np = get_latest_np()
         now = time.monotonic()
         if np and now - last_push >= NP_PERIOD:
@@ -268,6 +295,8 @@ async def ws_handler(ws):
                 set_latest_np(msg)
             elif msg.get("t") == "feed":
                 _feed_out.put(msg)
+            elif msg.get("t") == "queue":
+                _queue_out.put(msg)
     finally:
         _ws_clients.discard(ws)
         print("[bridge] extension disconnected", file=sys.stderr)

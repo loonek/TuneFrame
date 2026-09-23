@@ -34,6 +34,7 @@ public:
     int    read();
     size_t readBytes(uint8_t *buf, size_t n);
     void   print(const char *s);
+    void   print(int n) { char b[16]; snprintf(b, sizeof(b), "%d", n); print(b); }
     void   println(const char *s);
     void   flush() {}
     unsigned long timeout_ = 1000;

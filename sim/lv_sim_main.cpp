@@ -8,6 +8,7 @@
 #include "board_pins.h"
 #include "ui_home.h"
 #include "ui_now_playing.h"
+#include "ui_queue.h"
 #include "ui_nav.h"
 #include "link.h"
 
@@ -48,6 +49,20 @@ static void mouse_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
     data->state = mouse_down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 }
 
+// Injects a sample play queue
+static void sample_queue()
+{
+    const char *songs[8][2] = {
+        {"Blinding Lights", "The Weeknd"}, {"Nawet jak rozbije bank", "Mata"},
+        {"Cicho sza", "sanah"}, {"Supreme", "molodoikartel"},
+        {"Funeral", "Ashe"}, {"W te noc", "Happysad"},
+        {"HIGHJACK", "Alok, Laszewo & A$AP Rocky"}, {"car crash", "jigitz & Charlotte Plank"},
+    };
+    queue_begin();
+    for (int i = 0; i < 8; i++) queue_item(songs[i][0], songs[i][1], i == 1);
+    queue_end();
+}
+
 // Injects a sample now-playing message
 static void sample_np()
 {
@@ -73,13 +88,15 @@ static void sample_feed()
     };
 
     feed_begin();
-    feed_section("Quick picks");
+    feed_section("Quick picks", "");
     for (int i = 0; i < 6; i++) feed_item(songs[i][0], songs[i][1], "vid", "v");
-    feed_section("Ostatnio odtwarzane");
+    feed_section("Last played", "");
     for (int i = 0; i < 4; i++) feed_item(songs[i][0], songs[i][1], "vid", "v");
+    feed_section("Your Playlists", "p");
+    for (int i = 0; i < 4; i++) feed_item(songs[i][0], songs[i][1], "PLdemo", "s");
     feed_end();
 
-    for (int idx = 0; idx < 10; idx++)
+    for (int idx = 0; idx < 14; idx++)
     {
         uint8_t *buf = feed_thumb_begin(idx, 96, 96);
         if (!buf) continue;
@@ -128,6 +145,7 @@ int main(int argc, char **argv)
 
     g_scr_np = np_screen_create();
     g_scr_home = home_screen_create();
+    g_scr_queue = queue_screen_create();
     lv_scr_load(g_scr_home);
 
     bool live = (argc > 1 && strcmp(argv[1], "live") == 0);
@@ -138,11 +156,13 @@ int main(int argc, char **argv)
         link_on_art(np_art_begin, np_art_end);
         link_on_feed(feed_begin, feed_section, feed_item, feed_end);
         link_on_feed_thumb(feed_thumb_begin, feed_thumb_end);
+        link_on_queue(queue_begin, queue_item, queue_end);
     }
     else
     {
         sample_np();
         sample_feed();
+        sample_queue();
     }
 
     uint32_t last_feed_req = 0;
@@ -158,6 +178,8 @@ int main(int argc, char **argv)
             else if (e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_LEFT) mouse_down = false;
             else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_SPACE)
                 lv_scr_load(lv_scr_act() == g_scr_home ? g_scr_np : g_scr_home);
+            else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_q)
+                lv_scr_load(g_scr_queue);
         }
 
         if (live)

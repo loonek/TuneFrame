@@ -12,8 +12,11 @@ static feed_begin_t feed_begin_cb = nullptr;    // Callback for feed begin
 static feed_sec_t   feed_sec_cb = nullptr;      // Callback for feed section
 static feed_item_t  feed_item_cb = nullptr;     // Callback for feed item
 static feed_end_t   feed_end_cb = nullptr;      // Callback for feed end
-static feed_thumb_begin_t feed_thumb_begin_cb = nullptr; // Callback for feed thumbnail begin
-static feed_thumb_end_t   feed_thumb_end_cb = nullptr;   // Callback for feed thumbnail end
+static feed_thumb_begin_t feed_thumb_begin_cb = nullptr;// Callback for feed thumbnail begin
+static feed_thumb_end_t   feed_thumb_end_cb = nullptr;  // Callback for feed thumbnail end
+static queue_begin_t      queue_begin_cb = nullptr;     // Callback for queue begin 
+static queue_item_t       queue_item_cb = nullptr;      // Callback for queue items
+static queue_end_t        queue_end_cb = nullptr;       // Callback for queue end
 
 static const size_t ART_CHUNK = 4096;           // Size of chunks to read artwork data in
 
@@ -45,6 +48,14 @@ void link_on_feed(feed_begin_t begin, feed_sec_t sec, feed_item_t item, feed_end
     feed_sec_cb = sec;
     feed_item_cb = item;
     feed_end_cb = end;
+}
+
+// Sets the callbacks for queue events
+void link_on_queue(queue_begin_t begin, queue_item_t item, queue_end_t end)
+{
+    queue_begin_cb = begin;
+    queue_item_cb = item;
+    queue_end_cb = end;
 }
 
 // Sets the callbacks for feed thumbnail events
@@ -115,7 +126,7 @@ void link_task()
                 }
                 else if (strcmp(t, "fs") == 0 && feed_sec_cb)
                 {
-                    feed_sec_cb(doc["title"] | "");
+                    feed_sec_cb(doc["title"] | "", doc["k"] | "");
                 }
                 else if (strcmp(t, "fi") == 0 && feed_item_cb)
                 {
@@ -124,6 +135,18 @@ void link_task()
                 else if (strcmp(t, "fe") == 0 && feed_end_cb)
                 {
                     feed_end_cb();
+                }
+                else if (strcmp(t, "qb") == 0 && queue_begin_cb)
+                {
+                    queue_begin_cb();
+                }
+                else if (strcmp(t, "qi") == 0 && queue_item_cb)
+                {
+                    queue_item_cb(doc["title"] | "", doc["sub"] | "", doc["cur"] | false);
+                }
+                else if (strcmp(t, "qe") == 0 && queue_end_cb)
+                {
+                    queue_end_cb();
                 }
             }
             line_len = 0;
@@ -150,5 +173,13 @@ void link_send_play(const char *id, const char *kind)
     Serial.print(id);
     Serial.print("\",\"k\":\"");
     Serial.print(kind);
+    Serial.println("\"}");
+}
+
+// Sends a queue-jump command to the host, addressing queue item by index
+void link_send_qjump(int index)
+{
+    Serial.print("{\"t\":\"cmd\",\"a\":\"qjump\",\"id\":\"");
+    Serial.print(index);
     Serial.println("\"}");
 }

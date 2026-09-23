@@ -6,6 +6,8 @@
 #include "ui_home.h"
 #include "ui_nav.h"
 #include "link.h"
+#include "ui_queue.h"
+#include "strings.h"
 
 LV_FONT_DECLARE(opensans_16);
 
@@ -63,11 +65,17 @@ static lv_obj_t *make_ctrl_btn(lv_obj_t *parent, const char *symbol, const char 
     return lbl;
 }
 
-// Recognizes swipe down to navigate home
+// Recognizes swipe gestures
 static void np_gesture_cb(lv_event_t *e)
 {
     lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
     if (dir == LV_DIR_BOTTOM) lv_scr_load(g_scr_home);
+    else if (dir == LV_DIR_TOP)
+    {
+        queue_begin();
+        link_send_cmd("queue");
+        lv_scr_load(g_scr_queue);
+    }
 }
 
 // Build the "now playing" screen, returns the screen as an object
@@ -190,10 +198,10 @@ void np_apply(JsonDocument &doc)
     const char *status = doc["status"] | "none";
     if (strcmp(status, "none") == 0)
     {
-        lv_label_set_text(ui_title, "Nothing playing");
+        lv_label_set_text(ui_title, L->nothing_playing);
         lv_label_set_text(ui_artist, "");
         lv_label_set_text(ui_pp_icon, LV_SYMBOL_PLAY);
-        home_set_np("Nothing playing", "", false);
+        home_set_np(L->nothing_playing, "", false);
         np_playing = false;
         return;
     }

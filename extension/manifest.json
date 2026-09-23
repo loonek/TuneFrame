@@ -9,7 +9,8 @@
     {
       "matches": ["https://music.youtube.com/*"],
       "js": ["main_world.js"],
-      "world": "MAIN"
+      "world": "MAIN",
+      "run_at": "document_start"
     },
     {
       "matches": ["https://music.youtube.com/*"],

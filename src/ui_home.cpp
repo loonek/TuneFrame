@@ -4,6 +4,7 @@
 #include "ui_home.h"
 #include "ui_nav.h"
 #include "link.h"
+#include "strings.h"
 
 LV_FONT_DECLARE(opensans_16);
 LV_FONT_DECLARE(icons);
@@ -209,8 +210,8 @@ lv_obj_t *home_screen_create()
     lv_obj_set_style_border_width(bar, 0, LV_PART_ITEMS);
     lv_obj_set_style_border_width(bar, 0, LV_PART_ITEMS | LV_STATE_CHECKED);
 
-    feed_page = lv_tabview_add_tab(tv, "Feed");
-    playlists_page = lv_tabview_add_tab(tv, "Playlists");
+    feed_page = lv_tabview_add_tab(tv, L->tab_feed);
+    playlists_page = lv_tabview_add_tab(tv, L->tab_playlists);
     setup_page(feed_page);
     setup_page(playlists_page);
 
@@ -255,11 +256,11 @@ void feed_begin()
     feed_ready = true;
 }
 
-// Adds a new section, routing "Twoje playlisty" to the playlists tab
-void feed_section(const char *title)
+// Adds a new section, routing the playlists section (kind "p") to the playlists tab
+void feed_section(const char *title, const char *kind)
 {
     if (!feed_page) return;
-    bool playlists = strcmp(title, "Twoje playlisty") == 0;
+    bool playlists = strcmp(kind, "p") == 0;
     lv_obj_t *page = playlists ? playlists_page : feed_page;
 
     lv_obj_t *head = lv_label_create(page);

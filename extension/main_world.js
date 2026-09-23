@@ -28,6 +28,28 @@
     };
   }
 
+  // Collects deduplicated queue rows (drops audio/video counterparts)
+  function queueRows()
+  {
+    const q = document.querySelector("ytmusic-player-queue");
+    if (!q) return [];
+    return [...q.querySelectorAll("ytmusic-player-queue-item")].filter(el => {
+      const wrap = el.closest("ytmusic-playlist-panel-video-wrapper-renderer");
+      return !wrap || wrap.querySelector("ytmusic-player-queue-item") === el;
+    });
+  }
+
+  // Builds the queue payload for the esp
+  function readQueue()
+  {
+    const items = queueRows().slice(0, 50).map(el => ({
+      title: el.querySelector(".song-title")?.textContent.trim() || "",
+      sub:   el.querySelector(".byline")?.textContent.trim() || "",
+      cur:   el.hasAttribute("selected"),
+    }));
+    return { t: "queue", items: items };
+  }
+
   // Guards against overlapping feed fetches while the board re-requests
   let feedInFlight = false;
 
@@ -104,6 +126,11 @@
           input.select();
         }
       }
+    }
+    else if (action === "qjump" && id)
+    {
+      const el = queueRows()[parseInt(id, 10)];
+      if (el) el.querySelector("#play-button")?.click();
     }
   }
 
@@ -216,6 +243,10 @@
 
   const FEED_WANT = ["quick picks"];
 
+  // Feed section titles the extension owns (change per language for translations)
+  const SEC_HISTORY = "Last played";
+  const SEC_PLAYLISTS = "Your Playlists";
+
   // Builds auth headers (SAPISIDHASH + PageId) proving the logged-in user, so YT returns personalized data
   async function authHeaders()
   {
@@ -272,10 +303,10 @@
       }
     }
     if (!items.length) return null;
-    return { title: "Ostatnio odtwarzane", items: items.slice(0, 20) };
+    return { title: SEC_HISTORY, items: items.slice(0, 20) };
   }
 
-  // Reads the user's library playlists into a "Twoje playlisty" section (kind "s" = shuffle)
+  // Reads the user's library playlists into a "Your playlists" section (kind "s" = shuffle)
   async function parsePlaylists(resp)
   {
     let grid;
@@ -318,7 +349,7 @@
       });
     }
     if (!items.length) return null;
-    return { title: "Twoje playlisty", items: items };
+    return { title: SEC_PLAYLISTS, kind: "p", items: items };
   }
 
   // Looks for "quick picks" from the feed, and adds the "recently listened" feed
@@ -366,6 +397,7 @@
   }
 
   window.ytmcFeed = fetchFeed;
+  window.ytmcQueue = readQueue;
 
   // Cyclically sends readNowPlaying() upwards
   setInterval(() =>
@@ -389,6 +421,10 @@
       {
         window.postMessage({ source: "ytmc", dir: "up", payload: { t: "feed", sections: sections } }, "*");
       }).finally(() => { clearTimeout(wd); feedInFlight = false; });
+    }
+    else if (d.payload.t === "cmd" && d.payload.a === "queue")
+    {
+      window.postMessage({  source: "ytmc", dir: "up", payload: readQueue() }, "*");
     }
     else if (d.payload.t === "cmd")
     {

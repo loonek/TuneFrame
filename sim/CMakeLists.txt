@@ -17,8 +17,10 @@ add_executable(sim
     ${ROOT}/src/ui_home.cpp
     ${ROOT}/src/ui_now_playing.cpp
     ${ROOT}/src/link.cpp
+    ${ROOT}/src/strings.cpp
     ${ROOT}/src/opensans_16.c
     ${ROOT}/src/icons.c
+    ${ROOT}/src/ui_queue.cpp
     ${LVGL_SRC}
 )
 
