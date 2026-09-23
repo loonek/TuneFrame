@@ -3,6 +3,7 @@ import asyncio
 import io
 import json
 import queue
+import socket
 import sys
 import threading
 import time
@@ -15,6 +16,8 @@ from PIL import Image
 ART = 200
 ART_CHUNK = 4096
 NP_PERIOD = 0.3
+THUMB = 96
+FEED_MAX = 64
 
 _latest_np = None
 _np_lock = threading.Lock()
@@ -71,7 +74,22 @@ def wait_ok(ser, timeout=1.0):
             time.sleep(0.002)
     return False
 
-# Streams feed to serial as fb/fs/fi/fe
+# Sends one feed thumbnail addressed to a card index (RGB565 chunks + ack)
+def send_feed_thumb(ser, idx, url):
+    try:
+        out = url_to_rgb565(url, THUMB)
+    except Exception:
+        return
+    try:
+        ser.write((json.dumps({"t": "ft", "i": idx, "w": THUMB, "h": THUMB}) + "\n").encode("utf-8"))
+        for off in range(0, len(out), ART_CHUNK):
+            ser.write(out[off:off + ART_CHUNK])
+            if not wait_ok(ser):
+                return
+    except pyserial.SerialTimeoutException:
+        return
+
+# Streams feed to serial as fb/fs/fi/fe, then the thumbnails
 def send_feed(ser, feed):
     try:
         ser.write(b'{"t":"fb"}\n')
@@ -89,7 +107,17 @@ def send_feed(ser, feed):
                 ser.write((json.dumps(row, ensure_ascii=False) + "\n").encode("utf-8"))
         ser.write(b'{"t":"fe"}\n')
     except pyserial.SerialTimeoutException:
-        pass
+        return
+
+    idx = 0
+    for sec in feed.get("sections", []):
+        for it in sec.get("items", []):
+            if idx >= FEED_MAX:
+                return
+            url = it.get("thumb")
+            if url:
+                send_feed_thumb(ser, idx, url)
+            idx += 1
 
 # Sends the cover: header + RGB565 pixels in chunks, waiting for ack
 def send_cover(ser, url):
@@ -108,22 +136,77 @@ def send_cover(ser, url):
     except pyserial.SerialTimeoutException:
         return False
 
+# Serial-like adapter over TCP so the bridge can drive the PC simulator instead of a board
+class TcpSerial:
+    def __init__(self, host, port):
+        self.sock = socket.create_connection((host, port), timeout=5)
+        self.sock.setblocking(False)
+        self.buf = bytearray()
+
+    def _pump(self):
+        try:
+            while True:
+                data = self.sock.recv(65536)
+                if not data:
+                    break
+                self.buf.extend(data)
+        except BlockingIOError:
+            pass
+        except Exception:
+            pass
+
+    @property
+    def in_waiting(self):
+        self._pump()
+        return len(self.buf)
+
+    def read(self, n):
+        self._pump()
+        out = bytes(self.buf[:n])
+        del self.buf[:n]
+        return out
+
+    def write(self, b):
+        try:
+            self.sock.sendall(b)
+        except Exception:
+            pass
+
+    def close(self):
+        try:
+            self.sock.close()
+        except Exception:
+            pass
+
 # Serial thread: queues incoming cmds, pushes np, streams feed, sends cover on track change
-def serial_worker(port, baud):
-    ser = pyserial.Serial()
-    ser.port = port
-    ser.baudrate = baud
-    ser.timeout = 0
-    ser.write_timeout = 2
-    ser.dtr = False
-    ser.rts = False
-    try:
-        ser.open()
-    except Exception as e:
-        print(f"[serial] cannot open {port}: {e}", file=sys.stderr)
-        return
-    time.sleep(2)
-    print(f"[serial] open on {port}", file=sys.stderr)
+def serial_worker(port, baud, tcp):
+    if tcp:
+        ser = None
+        for _ in range(60):
+            try:
+                ser = TcpSerial("127.0.0.1", 8766)
+                break
+            except Exception:
+                time.sleep(1)
+        if ser is None:
+            print("[serial] cannot connect to sim on 127.0.0.1:8766", file=sys.stderr)
+            return
+        print("[serial] connected to sim on 127.0.0.1:8766", file=sys.stderr)
+    else:
+        ser = pyserial.Serial()
+        ser.port = port
+        ser.baudrate = baud
+        ser.timeout = 0
+        ser.write_timeout = 2
+        ser.dtr = False
+        ser.rts = False
+        try:
+            ser.open()
+        except Exception as e:
+            print(f"[serial] cannot open {port}: {e}", file=sys.stderr)
+            return
+        time.sleep(2)
+        print(f"[serial] open on {port}", file=sys.stderr)
 
     rx = bytearray()
     last_push = 0.0
@@ -209,9 +292,10 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", default="COM4")
     parser.add_argument("--baud", type=int, default=115200)
+    parser.add_argument("--tcp", action="store_true", help="drive the PC simulator over TCP instead of a serial port")
     args = parser.parse_args()
 
-    threading.Thread(target=serial_worker, args=(args.port, args.baud), daemon=True).start()
+    threading.Thread(target=serial_worker, args=(args.port, args.baud, args.tcp), daemon=True).start()
 
     async with websockets.serve(ws_handler, "localhost", 8765):
         print(f"[bridge] ws://localhost:8765 <-> serial {args.port}", file=sys.stderr)

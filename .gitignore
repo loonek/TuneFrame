@@ -3,3 +3,7 @@
 !.vscode/extensions.json
 *.bin
 *.elf
+
+# CMake / simulator build output
+build/
+sim/build/

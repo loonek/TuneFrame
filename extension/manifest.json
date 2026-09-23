@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Bridges the YouTube Music player to the JC4827W543 display.",
   "background": { "service_worker": "background.js" },
+  "permissions": ["alarms"],
   "content_scripts": [
     {
       "matches": ["https://music.youtube.com/*"],

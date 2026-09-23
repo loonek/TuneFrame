@@ -9,6 +9,10 @@
 lv_obj_t *g_scr_home = nullptr;
 lv_obj_t *g_scr_np = nullptr;
 
+
+// pc-helper/.venv/Scripts/python.exe pc-helper\bridge.py --port COM4
+
+
 void setup()
 {
     link_begin(115200);
@@ -19,6 +23,7 @@ void setup()
     link_on_now_playing(np_apply);
     link_on_art(np_art_begin, np_art_end);
     link_on_feed(feed_begin, feed_section, feed_item, feed_end);
+    link_on_feed_thumb(feed_thumb_begin, feed_thumb_end);
 }
 
 void loop()

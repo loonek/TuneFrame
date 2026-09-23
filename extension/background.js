@@ -5,6 +5,7 @@ let contentPort = null;
 // Connects ws://localhost:8765 with the bridge. Acts as a relay
 function connectWS()
 {
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
   ws = new WebSocket(WS_URL);
   ws.onclose = () =>
   {
@@ -33,6 +34,14 @@ function connectWS()
 }
 
 connectWS();
+
+// Keeps the MV3 service worker (and its WebSocket) alive across idle periods
+chrome.alarms.create("keepAlive", { periodInMinutes: 0.5 });
+chrome.alarms.onAlarm.addListener(() =>
+{
+  if (!ws || ws.readyState !== WebSocket.OPEN) connectWS();
+  else try { ws.send(JSON.stringify({ t: "ping" })); } catch (e) {}
+});
 
 chrome.runtime.onConnect.addListener((port) =>
 {

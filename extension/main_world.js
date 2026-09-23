@@ -28,6 +28,25 @@
     };
   }
 
+  // Guards against overlapping feed fetches while the board re-requests
+  let feedInFlight = false;
+
+  // Suppresses YT Music's "leave site?" prompt for our own navigations
+  let allowLeave = false;
+  window.addEventListener("beforeunload", (e) =>
+  {
+    if (!allowLeave) return;
+    e.stopImmediatePropagation();
+    e.returnValue = "";
+  }, true);
+
+  // Navigates YT Music to a path, playing with full queue/radio/history
+  function spaNav(path)
+  {
+    allowLeave = true;
+    location.assign(path);
+  }
+
   // Executes esp's commands
   function executeCommand(action, id, kind)
   {
@@ -41,17 +60,27 @@
     }
     else if (action === "vol_up")
     {
-      mp.setVolume(Math.min(100, Math.floor(mp.getVolume() / 10) * 10 + 10));
+      const v = mp.getVolume();
+      let nv;
+      if (v < 5) nv = 5;
+      else if (v < 10) nv = 10;
+      else nv = Math.min(100, Math.floor(v / 10) * 10 + 10);
+      mp.setVolume(nv);
     }
     else if (action === "vol_down")
     {
-      mp.setVolume(Math.max(0, Math.ceil(mp.getVolume() / 10) * 10 - 10));
+      const v = mp.getVolume();
+      let nv;
+      if (v <= 10) nv = Math.max(0, v - 1);
+      else nv = Math.max(0, Math.ceil(v / 10) * 10 - 10);
+      mp.setVolume(nv);
     }
     else if (action === "play" && id)
     {
-      if (kind === "p") mp.loadPlaylist({ playlist: id.replace(/^VL/, "") });
-      else if (kind === "b") location.assign("/browse/" + id);
-      else mp.loadVideoById(id);
+      if (kind === "s") { try { sessionStorage.setItem("ytmcShuffle", "1"); } catch (e) {} spaNav("/watch?list=" + id); }
+      else if (kind === "p") spaNav("/watch?list=" + id.replace(/^VL/, ""));
+      else if (kind === "b") spaNav("/browse/" + id);
+      else spaNav("/watch?v=" + id);
     }
     else if (action === "next")
     {
@@ -101,11 +130,21 @@
     return { id: "", kind: "" };
   }
 
-  // Reads an album tile into {title, sub, id, kind}
+  // Reads a thumbnail URL from a renderer, normalized to ~96px
+  function thumbUrl(node)
+  {
+    let arr;
+    try { arr = node.musicThumbnailRenderer.thumbnail.thumbnails; }
+    catch (e) { return ""; }
+    if (!arr || !arr.length) return "";
+    return arr[arr.length - 1].url.replace(/=w\d+-h\d+/, "=w96-h96").replace(/=s\d+/, "=s96");
+  }
+
+  // Reads an album tile into {title, sub, id, kind, thumb}
   function parseTwoRow(it)
   {
     const target = itemTarget(it.navigationEndpoint);
-    return { title: firstRun(it.title), sub: joinRuns(it.subtitle), id: target.id, kind: target.kind };
+    return { title: firstRun(it.title), sub: joinRuns(it.subtitle), id: target.id, kind: target.kind, thumb: thumbUrl(it.thumbnailRenderer) };
   }
 
   // Reads a song row into {title, sub, id, kind}
@@ -115,18 +154,19 @@
     let sub = "";
     try { title = firstRun(it.flexColumns[0].musicResponsiveListItemFlexColumnRenderer.text); }
     catch (e) {}
-    try { sub = joinRuns(it.flexColumns[1].musicResponsiveListItemFlexColumnRenderer.text); }
+    try { sub = joinRuns(it.flexColumns[1].musicResponsiveListItemFlexColumnRenderer.text).split(" • ")[0]; }
     catch (e) {}
 
+    const thumb = thumbUrl(it.thumbnail);
     if (it.playlistItemData && it.playlistItemData.videoId)
     {
-      return { title: title, sub: sub, id: it.playlistItemData.videoId, kind: "v" };
+      return { title: title, sub: sub, id: it.playlistItemData.videoId, kind: "v", thumb: thumb };
     }
     let nav = it.navigationEndpoint;
     try { if (!nav) nav = it.flexColumns[0].musicResponsiveListItemFlexColumnRenderer.text.runs[0].navigationEndpoint; }
     catch (e) {}
     const target = itemTarget(nav);
-    return { title: title, sub: sub, id: target.id, kind: target.kind };
+    return { title: title, sub: sub, id: target.id, kind: target.kind, thumb: thumb };
   }
 
   // Returns an array of shelves. Tries 2 paths, since they can look different.
@@ -235,6 +275,52 @@
     return { title: "Ostatnio odtwarzane", items: items.slice(0, 20) };
   }
 
+  // Reads the user's library playlists into a "Twoje playlisty" section (kind "s" = shuffle)
+  async function parsePlaylists(resp)
+  {
+    let grid;
+    try
+    {
+      const sl = resp.contents.singleColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.sectionListRenderer.contents;
+      grid = (sl.find((s) => s.gridRenderer) || {}).gridRenderer;
+    }
+    catch (e) { return null; }
+    if (!grid) return null;
+
+    const items = [];
+    for (const g of grid.items || [])
+    {
+      const it = g.musicTwoRowItemRenderer;
+      if (!it) continue;
+
+      let shuffle = null;
+      try
+      {
+        for (const mi of it.menu.menuRenderer.items)
+        {
+          const e = mi.menuNavigationItemRenderer;
+          if (e && e.icon && e.icon.iconType === "MUSIC_SHUFFLE")
+          {
+            shuffle = e.navigationEndpoint.watchPlaylistEndpoint;
+            break;
+          }
+        }
+      }
+      catch (e) {}
+      if (!shuffle || !shuffle.playlistId) continue;
+
+      items.push({
+        title: firstRun(it.title),
+        sub: joinRuns(it.subtitle).split(" • ")[0],
+        id: shuffle.playlistId,
+        kind: "s",
+        thumb: thumbUrl(it.thumbnailRenderer),
+      });
+    }
+    if (!items.length) return null;
+    return { title: "Twoje playlisty", items: items };
+  }
+
   // Looks for "quick picks" from the feed, and adds the "recently listened" feed
   async function fetchFeed()
   {
@@ -269,6 +355,13 @@
     }
     catch (e) {}
 
+    try
+    {
+      const pls = await parsePlaylists(await browse(key, headers, { context: ctx, browseId: "FEmusic_liked_playlists" }));
+      if (pls) out.push(pls);
+    }
+    catch (e) {}
+
     return out;
   }
 
@@ -289,14 +382,41 @@
     if (!d.payload) return;
     if (d.payload.t === "cmd" && d.payload.a === "feed")
     {
+      if (feedInFlight) return;
+      feedInFlight = true;
+      const wd = setTimeout(() => { feedInFlight = false; }, 15000);
       fetchFeed().then((sections) =>
       {
         window.postMessage({ source: "ytmc", dir: "up", payload: { t: "feed", sections: sections } }, "*");
-      });
+      }).finally(() => { clearTimeout(wd); feedInFlight = false; });
     }
     else if (d.payload.t === "cmd")
     {
       executeCommand(d.payload.a, d.payload.id, d.payload.k);
     }
   });
+
+  // After navigating to a playlist watch page (autoplays in order): turn on shuffle, skip one
+  try
+  {
+    if (sessionStorage.getItem("ytmcShuffle"))
+    {
+      sessionStorage.removeItem("ytmcShuffle");
+      let tries = 0;
+      const iv = setInterval(() =>
+      {
+        const v = document.querySelector("video");
+        const shuf = [...document.querySelectorAll("ytmusic-player-bar button[aria-label]")]
+          .find((b) => /shuffle|losow/i.test(b.getAttribute("aria-label")));
+        if (shuf && v && v.duration > 0)
+        {
+          clearInterval(iv);
+          if (shuf.getAttribute("aria-pressed") !== "true") shuf.click();
+          setTimeout(() => document.querySelector(".next-button")?.click(), 500);
+        }
+        else if (++tries > 80) clearInterval(iv);
+      }, 250);
+    }
+  }
+  catch (e) {}
 })();

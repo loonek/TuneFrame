@@ -12,6 +12,8 @@ static feed_begin_t feed_begin_cb = nullptr;    // Callback for feed begin
 static feed_sec_t   feed_sec_cb = nullptr;      // Callback for feed section
 static feed_item_t  feed_item_cb = nullptr;     // Callback for feed item
 static feed_end_t   feed_end_cb = nullptr;      // Callback for feed end
+static feed_thumb_begin_t feed_thumb_begin_cb = nullptr; // Callback for feed thumbnail begin
+static feed_thumb_end_t   feed_thumb_end_cb = nullptr;   // Callback for feed thumbnail end
 
 static const size_t ART_CHUNK = 4096;           // Size of chunks to read artwork data in
 
@@ -45,8 +47,15 @@ void link_on_feed(feed_begin_t begin, feed_sec_t sec, feed_item_t item, feed_end
     feed_end_cb = end;
 }
 
-// Receives artwork data in chunks and calls the end callback when done
-static void receive_art(uint8_t *buf, size_t total)
+// Sets the callbacks for feed thumbnail events
+void link_on_feed_thumb(feed_thumb_begin_t begin, feed_thumb_end_t end)
+{
+    feed_thumb_begin_cb = begin;
+    feed_thumb_end_cb = end;
+}
+
+// Receives binary data into buf in chunks, acking each; returns true if complete
+static bool receive_binary(uint8_t *buf, size_t total)
 {
     size_t got = 0;
     while (got < total)
@@ -57,9 +66,9 @@ static void receive_art(uint8_t *buf, size_t total)
         got += r;
         Serial.println("{\"t\":\"ok\"}");
         Serial.flush();
-        if (r < want) return;
+        if (r < want) return false;
     }
-    if (got == total && art_end_cb) art_end_cb();
+    return true;
 }
 
 // Processes incoming serial data, looking for complete JSON messages and dispatching them to the appropriate callbacks
@@ -86,7 +95,18 @@ void link_task()
                     uint8_t *buf = art_begin_cb(w, h);
                     if (buf && w > 0 && h > 0)
                     {
-                        receive_art(buf, (size_t)w * h * 2);
+                        if (receive_binary(buf, (size_t)w * h * 2) && art_end_cb) art_end_cb();
+                    }
+                }
+                else if (strcmp(t, "ft") == 0 && feed_thumb_begin_cb)
+                {
+                    int i = doc["i"] | -1;
+                    int w = doc["w"] | 0;
+                    int h = doc["h"] | 0;
+                    uint8_t *buf = feed_thumb_begin_cb(i, w, h);
+                    if (buf && w > 0 && h > 0)
+                    {
+                        if (receive_binary(buf, (size_t)w * h * 2) && feed_thumb_end_cb) feed_thumb_end_cb(i);
                     }
                 }
                 else if (strcmp(t, "fb") == 0 && feed_begin_cb)
