@@ -1,0 +1,9 @@
+# Runtime dependencies for the bridge
+websockets
+pyserial
+Pillow
+pystray
+
+# Build-time only (for packaging into an .exe):
+#   pip install pyinstaller
+#   pyinstaller jc-music-bridge.spec

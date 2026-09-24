@@ -1,8 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "JC4827 Music Bridge",
+  "name": "TuneFrame",
   "version": "0.1.0",
-  "description": "Bridges the YouTube Music player to the JC4827W543 display.",
+  "description": "Mirrors your YouTube Music now-playing, feed and playlists to a JC4827W543 touchscreen, and sends taps back to control playback.",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
   "background": { "service_worker": "background.js" },
   "permissions": ["alarms"],
   "content_scripts": [

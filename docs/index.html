@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flash JC4827W543 Music Display</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 24px 16px;
+      box-sizing: border-box;
+      background: #0f0f0f;
+      color: #eee;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      text-align: center;
+    }
+    h1 { font-size: 1.5rem; margin: 0; }
+    p { max-width: 34rem; line-height: 1.5; color: #bbb; margin: 0; }
+    .note { font-size: 0.85rem; color: #888; }
+    a { color: #ff5555; }
+    esp-web-install-button { --esp-tools-button-color: #fff; --esp-tools-button-text-color: #0f0f0f; }
+  </style>
+</head>
+<body>
+  <h1>JC4827W543 Music Display</h1>
+  <p>Connect the board over USB, then click <strong>Install</strong> and pick its serial port.</p>
+
+  <esp-web-install-button manifest="manifest.json">
+    <span slot="unsupported">
+      Web Serial is not available in this browser. Use <strong>Chrome</strong> or <strong>Edge</strong> on a desktop.
+    </span>
+    <span slot="not-allowed">
+      This page must be served over HTTPS (or localhost) to flash.
+    </span>
+  </esp-web-install-button>
+</body>
+</html>

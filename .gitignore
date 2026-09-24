@@ -3,7 +3,21 @@
 !.vscode/extensions.json
 *.bin
 *.elf
+!docs/firmware.factory.bin   # keep the flasher's firmware in the repo
 
 # CMake / simulator build output
 build/
 sim/build/
+
+# Python bridge
+pc-helper/.venv/
+__pycache__/
+*.pyc
+dist/
+
+# Store screenshot working folders
+scripts/shots_in/
+scripts/shots_out/
+
+# Krita source art (export PNGs are kept)
+*.kra

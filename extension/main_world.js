@@ -437,10 +437,6 @@ async function fetchPlaylist(id)
   return { t: "playlist", title: title, items: items.slice(0, 100) };
 }
 
-  window.ytmcFeed = fetchFeed;
-  window.ytmcQueue = readQueue;
-  window.ytmcPlaylist = fetchPlaylist;
-
   // Cyclically sends readNowPlaying() upwards
   setInterval(() =>
   {

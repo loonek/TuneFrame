@@ -4,6 +4,9 @@
 
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
+#include <ctime>
+#include <filesystem>
 
 #include "board_pins.h"
 #include "ui_home.h"
@@ -55,10 +58,10 @@ static void mouse_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 static void sample_queue()
 {
     const char *songs[8][2] = {
-        {"Blinding Lights", "The Weeknd"}, {"Nawet jak rozbije bank", "Mata"},
-        {"Cicho sza", "sanah"}, {"Supreme", "molodoikartel"},
-        {"Funeral", "Ashe"}, {"W te noc", "Happysad"},
-        {"HIGHJACK", "Alok, Laszewo & A$AP Rocky"}, {"car crash", "jigitz & Charlotte Plank"},
+        {"Blinding Lights", "The Weeknd"}, {"Midnight City", "M83"},
+        {"Redbone", "Childish Gambino"}, {"Instant Crush", "Daft Punk"},
+        {"Electric Feel", "MGMT"}, {"The Less I Know the Better", "Tame Impala"},
+        {"Dreams", "Fleetwood Mac"}, {"Get Lucky", "Daft Punk"},
     };
     queue_begin();
     for (int i = 0; i < 8; i++) queue_item(songs[i][0], songs[i][1], i == 1);
@@ -84,9 +87,9 @@ static void sample_np()
 static void sample_feed()
 {
     const char *songs[6][2] = {
-        {"Blinding Lights", "The Weeknd"}, {"Nawet jak rozbije bank", "Mata"},
-        {"Cicho sza", "sanah"}, {"Supreme", "molodoikartel"},
-        {"Funeral", "Ashe"}, {"W te noc", "Happysad"},
+        {"Blinding Lights", "The Weeknd"}, {"Midnight City", "M83"},
+        {"Redbone", "Childish Gambino"}, {"Instant Crush", "Daft Punk"},
+        {"Electric Feel", "MGMT"}, {"The Less I Know the Better", "Tame Impala"},
     };
 
     feed_begin();
@@ -94,8 +97,9 @@ static void sample_feed()
     for (int i = 0; i < 6; i++) feed_item(songs[i][0], songs[i][1], "vid", "v");
     feed_section("Last played", "");
     for (int i = 0; i < 4; i++) feed_item(songs[i][0], songs[i][1], "vid", "v");
+    const char *playlists[4] = {"Chill Mix", "Workout", "Focus", "Road Trip"};
     feed_section("Your Playlists", "p");
-    for (int i = 0; i < 4; i++) feed_item(songs[i][0], songs[i][1], "PLdemo", "s");
+    for (int i = 0; i < 4; i++) feed_item(playlists[i], "Playlist", "PLdemo", "s");
     feed_end();
 
     for (int idx = 0; idx < 14; idx++)
@@ -112,6 +116,55 @@ static void sample_feed()
             buf[2 * p + 1] = (v >> 8) & 0xFF;
         }
         feed_thumb_end(idx);
+    }
+}
+
+// Fills the now-playing cover with a placeholder gradient
+static void sample_cover()
+{
+    const int w = 200, h = 200;
+    uint8_t *buf = np_art_begin(w, h);
+    if (!buf) return;
+    for (int p = 0; p < w * h; p++)
+    {
+        uint8_t r = (uint8_t)((p % w) * 255 / w);
+        uint8_t g = (uint8_t)((p / w) * 255 / h);
+        uint8_t b = 130;
+        uint16_t v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+        buf[2 * p] = v & 0xFF;
+        buf[2 * p + 1] = (v >> 8) & 0xFF;
+    }
+    np_art_end();
+}
+
+// Injects a sample playlist into the playlist detail screen
+static void sample_playlist()
+{
+    const char *songs[8][2] = {
+        {"Blinding Lights", "The Weeknd"}, {"Midnight City", "M83"},
+        {"Redbone", "Childish Gambino"}, {"Instant Crush", "Daft Punk"},
+        {"Electric Feel", "MGMT"}, {"The Less I Know the Better", "Tame Impala"},
+        {"Dreams", "Fleetwood Mac"}, {"Get Lucky", "Daft Punk"},
+    };
+    playlist_begin("Chill Mix");
+    for (int i = 0; i < 8; i++) playlist_item(songs[i][0], songs[i][1]);
+    playlist_end();
+}
+
+// Saves the current framebuffer straight to scripts/shots_in/ (no window chrome)
+static void save_screenshot()
+{
+    std::filesystem::create_directories("scripts/shots_in");
+    static int n = 1;
+    char path[128];
+    snprintf(path, sizeof(path), "scripts/shots_in/sim_%ld_%d.bmp", (long)time(NULL), n++);
+    SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom(
+        framebuf, LCD_WIDTH, LCD_HEIGHT, 32, LCD_WIDTH * 4, SDL_PIXELFORMAT_ARGB8888);
+    if (surf)
+    {
+        SDL_SaveBMP(surf, path);
+        SDL_FreeSurface(surf);
+        fprintf(stderr, "saved %s\n", path);
     }
 }
 
@@ -166,8 +219,10 @@ int main(int argc, char **argv)
     else
     {
         sample_np();
+        sample_cover();
         sample_feed();
         sample_queue();
+        sample_playlist();
     }
 
     uint32_t last_feed_req = 0;
@@ -184,7 +239,17 @@ int main(int argc, char **argv)
             else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_SPACE)
                 lv_scr_load(lv_scr_act() == g_scr_home ? g_scr_np : g_scr_home);
             else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_q)
+            {
+                if (!live) sample_queue();
                 lv_scr_load(g_scr_queue);
+            }
+            else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_p)
+            {
+                if (!live) sample_playlist();
+                lv_scr_load(g_scr_playlist);
+            }
+            else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F2)
+                save_screenshot();
         }
 
         if (live)

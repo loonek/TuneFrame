@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import collections
 import io
 import json
 import queue
@@ -10,8 +11,10 @@ import time
 import urllib.request
 
 import serial as pyserial
+from serial.tools import list_ports
 import websockets
-from PIL import Image
+import pystray
+from PIL import Image, ImageDraw
 
 ART = 200
 ART_CHUNK = 4096
@@ -27,6 +30,22 @@ _feed_out = queue.Queue()
 _stop = threading.Event()
 _queue_out = queue.Queue()
 _playlist_out = queue.Queue()
+_log = collections.deque(maxlen=200)   # recent events for the diagnostics window
+_board_connected = False
+_loop = None                            # asyncio loop, for cross-thread shutdown
+_reconnect = threading.Event()          # signals serial_worker to re-open the board link
+_port = "auto"                          # "auto" = detect the ESP by USB VID, else a COM name
+
+ESP_VID = 0x303A                        # Espressif USB vendor id (native USB CDC)
+
+# Appends a timestamped line to the diagnostics log and, if present, stderr
+def log(msg):
+    _log.append(time.strftime("%H:%M:%S") + " " + msg)
+    if sys.stderr:                       # None in a windowed (no-console) exe
+        try:
+            print("[bridge] " + msg, file=sys.stderr)
+        except Exception:
+            pass
 
 # Saves latest "now playing" under lock
 def set_latest_np(np):
@@ -157,7 +176,7 @@ def send_cover(ser, url):
     try:
         out = url_to_rgb565(url)
     except Exception as e:
-        print(f"[cover] fetch/convert failed: {e}", file=sys.stderr)
+        log(f"cover fetch/convert failed: {e}")
         return False
     try:
         ser.write((json.dumps({"t": "art", "w": ART, "h": ART}) + "\n").encode("utf-8"))
@@ -211,100 +230,140 @@ class TcpSerial:
         except Exception:
             pass
 
-# Serial thread: queues incoming cmds, pushes np, streams feed, sends cover on track change
-def serial_worker(port, baud, tcp):
+# Finds the ESP's serial port by USB vendor id, or None
+def detect_port():
+    for p in list_ports.comports():
+        if getattr(p, "vid", None) == ESP_VID:
+            return p.device
+    return None
+
+# Names of all serial ports currently present
+def list_serial_ports():
+    return [p.device for p in list_ports.comports()]
+
+# Opens the board link (auto-detecting the ESP port), or returns None so the caller retries
+def open_link(baud, tcp):
     if tcp:
-        ser = None
-        for _ in range(60):
-            try:
-                ser = TcpSerial("127.0.0.1", 8766)
-                break
-            except Exception:
-                time.sleep(1)
-        if ser is None:
-            print("[serial] cannot connect to sim on 127.0.0.1:8766", file=sys.stderr)
-            return
-        print("[serial] connected to sim on 127.0.0.1:8766", file=sys.stderr)
-    else:
-        ser = pyserial.Serial()
-        ser.port = port
-        ser.baudrate = baud
-        ser.timeout = 0
-        ser.write_timeout = 2
-        ser.dtr = False
-        ser.rts = False
         try:
-            ser.open()
-        except Exception as e:
-            print(f"[serial] cannot open {port}: {e}", file=sys.stderr)
-            return
-        time.sleep(2)
-        print(f"[serial] open on {port}", file=sys.stderr)
+            s = TcpSerial("127.0.0.1", 8766)
+            log("board connected (sim tcp 127.0.0.1:8766)")
+            return s
+        except Exception:
+            return None
+    port = _port
+    if port == "auto":
+        port = detect_port()
+        if not port:
+            return None
+    ser = pyserial.Serial()
+    ser.port = port
+    ser.baudrate = baud
+    ser.timeout = 0
+    ser.write_timeout = 2
+    ser.dtr = False
+    ser.rts = False
+    try:
+        ser.open()
+    except Exception as e:
+        log(f"cannot open {port}: {e}")
+        return None
+    time.sleep(2)
+    log(f"board connected on {port}")
+    return ser
 
-    rx = bytearray()
-    last_push = 0.0
-    last_art_title = None
+# Serial thread: (re)opens the board link and relays np/feed/cover/commands
+def serial_worker(baud, tcp):
+    global _board_connected
     while not _stop.is_set():
-        n = ser.in_waiting
-        if n:
-            rx.extend(ser.read(n))
-            while b"\n" in rx:
-                line, _, rest = rx.partition(b"\n")
-                rx[:] = rest
-                try:
-                    obj = json.loads(line.decode("utf-8", "ignore"))
-                    if obj.get("t") == "cmd":
-                        _cmd_out.put(obj)
-                except json.JSONDecodeError:
-                    pass
+        ser = open_link(baud, tcp)
+        if ser is None:
+            time.sleep(2)          # board not ready; keep retrying
+            continue
 
-        try:
-            feed = _feed_out.get_nowait()
-        except queue.Empty:
-            feed = None
-        if feed:
-            send_feed(ser, feed)
-
-        try:
-            q = _queue_out.get_nowait()
-        except queue.Empty:
-            q = None
-        if q:
-            send_queue(ser, q)
-
-        try:
-            pl = _playlist_out.get_nowait()
-        except queue.Empty:
-            pl = None
-        if pl:
-            send_playlist(ser, pl)
-
-        np = get_latest_np()
-        now = time.monotonic()
-        if np and now - last_push >= NP_PERIOD:
+        _board_connected = True
+        _reconnect.clear()
+        rx = bytearray()
+        last_push = 0.0
+        last_art_title = None
+        while not _stop.is_set() and not _reconnect.is_set():
             try:
-                ser.write((json.dumps(strip_cover(np), ensure_ascii=False) + "\n").encode("utf-8"))
-            except pyserial.SerialTimeoutException:
-                pass
-            last_push = now
+                n = ser.in_waiting
+                if n:
+                    rx.extend(ser.read(n))
+                    while b"\n" in rx:
+                        line, _, rest = rx.partition(b"\n")
+                        rx[:] = rest
+                        try:
+                            obj = json.loads(line.decode("utf-8", "ignore"))
+                            if obj.get("t") == "cmd":
+                                _cmd_out.put(obj)
+                                log("cmd from board: " + str(obj.get("a", "")))
+                        except json.JSONDecodeError:
+                            pass
 
-            title = np.get("title")
-            url = np.get("cover_url")
-            if np.get("status") != "none" and title and title != last_art_title and url:
-                if send_cover(ser, url):
-                    last_art_title = title
+                try:
+                    feed = _feed_out.get_nowait()
+                except queue.Empty:
+                    feed = None
+                if feed:
+                    send_feed(ser, feed)
 
-        time.sleep(0.02)
+                try:
+                    q = _queue_out.get_nowait()
+                except queue.Empty:
+                    q = None
+                if q:
+                    send_queue(ser, q)
 
-    ser.close()
+                try:
+                    pl = _playlist_out.get_nowait()
+                except queue.Empty:
+                    pl = None
+                if pl:
+                    send_playlist(ser, pl)
+
+                np = get_latest_np()
+                now = time.monotonic()
+                if np and now - last_push >= NP_PERIOD:
+                    try:
+                        ser.write((json.dumps(strip_cover(np), ensure_ascii=False) + "\n").encode("utf-8"))
+                    except pyserial.SerialTimeoutException:
+                        pass
+                    last_push = now
+
+                    title = np.get("title")
+                    url = np.get("cover_url")
+                    if np.get("status") != "none" and title and title != last_art_title and url:
+                        if send_cover(ser, url):
+                            last_art_title = title
+            except (pyserial.SerialException, OSError) as e:
+                log(f"serial error: {e}")
+                break
+
+            time.sleep(0.02)
+
+        _board_connected = False
+        try:
+            ser.close()
+        except Exception:
+            pass
+        log("reconnecting board link" if _reconnect.is_set() else "board disconnected")
 
 
 _ws_clients = set()
 
 # Connects with the browser extension
 async def ws_handler(ws):
+    try:
+        origin = ws.request.headers.get("Origin", "")      # websockets >= 13
+    except AttributeError:
+        origin = ws.request_headers.get("Origin", "")       # older API
+    if origin.startswith("http://") or origin.startswith("https://"):
+        await ws.close()   # reject real web pages; the extension has no http(s) origin
+        return
+
     _ws_clients.add(ws)
-    print("[bridge] extension connected", file=sys.stderr)
+    log("extension connected")
     try:
         async for message in ws:
             try:
@@ -321,11 +380,11 @@ async def ws_handler(ws):
                 _playlist_out.put(msg)
     finally:
         _ws_clients.discard(ws)
-        print("[bridge] extension disconnected", file=sys.stderr)
+        log("extension disconnected")
 
 # Sends esp commands to the browser extension
 async def pump_commands():
-    while True:
+    while not _stop.is_set():
         try:
             cmd = _cmd_out.get_nowait()
         except queue.Empty:
@@ -339,22 +398,154 @@ async def pump_commands():
                 pass
 
 
-async def main():
+# Serves the WebSocket and pumps commands until shutdown
+async def async_main(args):
+    global _loop
+    _loop = asyncio.get_running_loop()
+    async with websockets.serve(ws_handler, "localhost", 8765):
+        log("ws://localhost:8765 <-> " + ("sim (tcp)" if args.tcp else "serial " + args.port))
+        await pump_commands()
+
+# Runs the asyncio server on its own thread so the tray owns the main thread
+def run_async(args):
+    try:
+        asyncio.run(async_main(args))
+    except (KeyboardInterrupt, RuntimeError):
+        pass
+    except OSError as e:
+        log(f"server error (is another bridge running?): {e}")
+
+# Builds the tray icon image
+def make_icon_image():
+    img = Image.new("RGB", (64, 64), (15, 15, 15))
+    d = ImageDraw.Draw(img)
+    d.ellipse((16, 16, 48, 48), fill=(255, 0, 0))
+    return img
+
+# Menu action: re-open the board link and drop WS clients so the extension reconnects
+def on_reconnect(icon=None, item=None):
+    log("reconnect requested")
+    _reconnect.set()
+    if _loop:
+        _loop.call_soon_threadsafe(_close_ws_clients)
+
+# Closes all extension WebSocket connections (runs on the asyncio loop thread)
+def _close_ws_clients():
+    for ws in list(_ws_clients):
+        asyncio.create_task(ws.close())
+
+# Builds the Port submenu: Auto plus each present serial port
+def port_menu():
+    def choose(value):
+        def handler(icon=None, item=None):
+            global _port
+            _port = value
+            log(f"port set to {value}")
+            _reconnect.set()
+        return handler
+    items = [pystray.MenuItem("Auto", choose("auto"), checked=lambda i: _port == "auto", radio=True)]
+    for p in list_serial_ports():
+        items.append(pystray.MenuItem(p, choose(p), checked=lambda i, p=p: _port == p, radio=True))
+    return pystray.Menu(*items)
+
+# Shared with the tray-thread menu callbacks
+_root = None
+_diag = None
+_tray_icon = None
+
+# Menu action: show the diagnostics window (scheduled onto the Tk main thread)
+def on_diagnostics(icon=None, item=None):
+    if _root:
+        _root.after(0, lambda: (_diag.deiconify(), _diag.lift()))
+
+# Menu action: quit everything (scheduled onto the Tk main thread)
+def on_quit(icon=None, item=None):
+    if _root:
+        _root.after(0, _do_quit)
+
+# Tears down the loop, tray and Tk (main thread only)
+def _do_quit():
+    _stop.set()
+    if _loop:
+        _loop.call_soon_threadsafe(_loop.stop)
+    if _tray_icon:
+        _tray_icon.stop()
+    if _root:
+        _root.quit()
+
+# Builds the hidden diagnostics window, refreshed every 500 ms while visible
+def build_diag(root):
+    import tkinter as tk
+    win = tk.Toplevel(root)
+    win.title("JC bridge diagnostics")
+    win.configure(bg="#111111")
+    win.protocol("WM_DELETE_WINDOW", win.withdraw)   # hide, keep it reusable
+    win.withdraw()
+
+    status = tk.Label(win, fg="white", bg="#111111", justify="left", font=("Consolas", 10))
+    status.pack(anchor="w", padx=8, pady=6)
+    txt = tk.Text(win, width=72, height=18, bg="#1a1a1a", fg="#dddddd",
+                  insertbackground="white", font=("Consolas", 9))
+    txt.pack(padx=8, pady=(0, 8))
+
+    def tick():
+        if win.state() == "normal":
+            ext = "yes" if _ws_clients else "no"
+            board = "yes" if _board_connected else "no"
+            np = get_latest_np()
+            now = ""
+            if np and np.get("status") != "none":
+                now = (np.get("title") or "") + " - " + (np.get("artist") or "")
+            status.config(text=f"Extension: {ext}    Board: {board}\nNow playing: {now}")
+            txt.delete("1.0", "end")
+            txt.insert("end", "\n".join(_log))
+            txt.see("end")
+        root.after(500, tick)
+
+    tick()
+    return win
+
+
+def main():
+    global _root, _diag, _tray_icon, _port
     parser = argparse.ArgumentParser()
-    parser.add_argument("--port", default="COM4")
+    parser.add_argument("--port", default="auto", help="serial port, or 'auto' to detect the ESP by USB id")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--tcp", action="store_true", help="drive the PC simulator over TCP instead of a serial port")
+    parser.add_argument("--no-tray", action="store_true", help="run headless, without the tray icon")
     args = parser.parse_args()
+    _port = args.port
 
-    threading.Thread(target=serial_worker, args=(args.port, args.baud, args.tcp), daemon=True).start()
+    threading.Thread(target=serial_worker, args=(args.baud, args.tcp), daemon=True).start()
+    threading.Thread(target=run_async, args=(args,), daemon=True).start()
 
-    async with websockets.serve(ws_handler, "localhost", 8765):
-        print(f"[bridge] ws://localhost:8765 <-> serial {args.port}", file=sys.stderr)
-        await pump_commands()
+    if args.no_tray:
+        try:
+            while not _stop.is_set():
+                time.sleep(0.5)
+        except KeyboardInterrupt:
+            _stop.set()
+        return
+
+    import tkinter as tk
+
+    _root = tk.Tk()
+    _root.withdraw()                 # Tk owns the main thread; only the Toplevel is shown
+    _diag = build_diag(_root)
+
+    menu = pystray.Menu(
+        pystray.MenuItem("Reconnect", on_reconnect),
+        pystray.MenuItem("Port", port_menu()),
+        pystray.MenuItem("Diagnostics", on_diagnostics),
+        pystray.MenuItem("Quit", on_quit),
+    )
+    _tray_icon = pystray.Icon("jc_bridge", make_icon_image(), "JC Music Bridge", menu)
+    _tray_icon.run_detached()        # tray runs on its own thread
+    try:
+        _root.mainloop()             # blocks on the main thread until _do_quit
+    except KeyboardInterrupt:
+        _do_quit()
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        _stop.set()
+    main()

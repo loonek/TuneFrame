@@ -17,7 +17,7 @@ lv_obj_t *g_scr_queue = nullptr;
 lv_obj_t *g_scr_settings = nullptr;
 lv_obj_t *g_scr_playlist = nullptr;
 
-// pc-helper/.venv/Scripts/python.exe pc-helper\bridge.py --port COM4
+// pc-helper\.venv\Scripts\python.exe pc-helper\bridge.py
 // pc-helper\.venv\Scripts\python.exe pc-helper\bridge.py --tcp
 
 void setup()

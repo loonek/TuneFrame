@@ -1,0 +1,12 @@
+{
+  "name": "JC4827W543 Music Display",
+  "version": "0.1.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "firmware.factory.bin", "offset": 0 }
+      ]
+    }
+  ]
+}
