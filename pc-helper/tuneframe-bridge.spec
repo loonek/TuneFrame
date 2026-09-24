@@ -5,7 +5,7 @@ a = Analysis(
     ['bridge.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('tuneframe.png', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='jc-music-bridge',
+    name='tuneframe-bridge',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['tuneframe.ico'],
 )
