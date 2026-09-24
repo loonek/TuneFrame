@@ -3,12 +3,18 @@ import asyncio
 import collections
 import io
 import json
+import os
 import queue
 import socket
 import sys
 import threading
 import time
 import urllib.request
+
+try:
+    import winreg  # Windows only, for the "start on launch" toggle
+except ImportError:
+    winreg = None
 
 import serial as pyserial
 from serial.tools import list_ports
@@ -415,12 +421,61 @@ def run_async(args):
     except OSError as e:
         log(f"server error (is another bridge running?): {e}")
 
-# Builds the tray icon image
+# Resolves a bundled resource path (works in dev and in the PyInstaller exe)
+def resource_path(name):
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, name)
+
+# Loads the tray icon (the app logo), falling back to a plain dot
 def make_icon_image():
-    img = Image.new("RGB", (64, 64), (15, 15, 15))
-    d = ImageDraw.Draw(img)
-    d.ellipse((16, 16, 48, 48), fill=(255, 0, 0))
-    return img
+    try:
+        return Image.open(resource_path("tuneframe.png")).convert("RGBA")
+    except Exception:
+        img = Image.new("RGB", (64, 64), (15, 15, 15))
+        d = ImageDraw.Draw(img)
+        d.ellipse((16, 16, 48, 48), fill=(255, 0, 0))
+        return img
+
+_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_APP_NAME = "TuneFrame"
+
+# The command Windows should run at login (the exe when frozen, else python + this script)
+def _autostart_command():
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    return f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+
+# Whether the login autostart entry is present
+def is_autostart_enabled():
+    if not winreg:
+        return False
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY) as k:
+            winreg.QueryValueEx(k, _APP_NAME)
+        return True
+    except OSError:
+        return False
+
+# Adds or removes the login autostart entry (the app opens straight to the tray)
+def set_autostart(enable):
+    if not winreg:
+        return
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+            if enable:
+                winreg.SetValueEx(k, _APP_NAME, 0, winreg.REG_SZ, _autostart_command())
+            else:
+                try:
+                    winreg.DeleteValue(k, _APP_NAME)
+                except OSError:
+                    pass
+        log("start on launch: " + ("on" if enable else "off"))
+    except OSError as e:
+        log(f"autostart error: {e}")
+
+# Menu action: toggle start on launch
+def on_toggle_autostart(icon=None, item=None):
+    set_autostart(not is_autostart_enabled())
 
 # Menu action: re-open the board link and drop WS clients so the extension reconnects
 def on_reconnect(icon=None, item=None):
@@ -537,9 +592,10 @@ def main():
         pystray.MenuItem("Reconnect", on_reconnect),
         pystray.MenuItem("Port", port_menu()),
         pystray.MenuItem("Diagnostics", on_diagnostics),
+        pystray.MenuItem("Run on startup", on_toggle_autostart, checked=lambda i: is_autostart_enabled()),
         pystray.MenuItem("Quit", on_quit),
     )
-    _tray_icon = pystray.Icon("jc_bridge", make_icon_image(), "JC Music Bridge", menu)
+    _tray_icon = pystray.Icon("tuneframe", make_icon_image(), "TuneFrame", menu)
     _tray_icon.run_detached()        # tray runs on its own thread
     try:
         _root.mainloop()             # blocks on the main thread until _do_quit
