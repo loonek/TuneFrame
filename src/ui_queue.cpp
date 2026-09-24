@@ -4,7 +4,7 @@
 #include "ui_queue.h"
 #include "ui_nav.h"
 #include "link.h"
-#include "strings.h"
+#include "i18n.h"
 
 LV_FONT_DECLARE(opensans_16);
 

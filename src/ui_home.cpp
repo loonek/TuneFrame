@@ -4,7 +4,8 @@
 #include "ui_home.h"
 #include "ui_nav.h"
 #include "link.h"
-#include "strings.h"
+#include "i18n.h"
+#include "ui_playlist.h"
 
 LV_FONT_DECLARE(opensans_16);
 LV_FONT_DECLARE(icons);
@@ -41,6 +42,12 @@ static void open_np_cb(lv_event_t *e)
     lv_scr_load(g_scr_np);
 }
 
+// Opens the settings screen when the gear is clicked
+static void settings_cb(lv_event_t *e)
+{
+    lv_scr_load(g_scr_settings);
+}
+
 // Sends a command to the host when mini-player buttons are clicked
 static void mini_cmd_cb(lv_event_t *e)
 {
@@ -51,7 +58,17 @@ static void mini_cmd_cb(lv_event_t *e)
 static void card_cb(lv_event_t *e)
 {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
-    if (idx >= 0 && idx < feed_count) link_send_play(feed_ids[idx], feed_kinds[idx]);
+    if (idx < 0 || idx >= feed_count) return;
+    if (feed_kinds[idx][0] == 's')   // playlist card -> open its track list
+    {
+        playlist_open(feed_ids[idx]);
+        link_send_playlist(feed_ids[idx]);
+        lv_scr_load(g_scr_playlist);
+    }
+    else
+    {
+        link_send_play(feed_ids[idx], feed_kinds[idx]);
+    }
 }
 
 // Shows or hides the feed loading indicator
@@ -109,26 +126,10 @@ static lv_obj_t *make_search(lv_obj_t *parent)
     return btn;
 }
 
-// Creates the mini player at the bottom of the home screen
-static lv_obj_t *make_mini(lv_obj_t *scr)
+// Creates the refresh button that reloads the feed
+static void make_refresh(lv_obj_t *parent)
 {
-    lv_obj_t *mini = lv_obj_create(scr);
-    lv_obj_remove_style_all(mini);
-    lv_obj_set_width(mini, lv_pct(100));
-    lv_obj_set_height(mini, 54);
-    lv_obj_clear_flag(mini, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(mini, 8, 0);
-    lv_obj_set_style_bg_opa(mini, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(mini, lv_color_hex(0x1E1E1E), 0);
-    lv_obj_set_flex_flow(mini, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(mini, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_left(mini, 8, 0);
-    lv_obj_set_style_pad_right(mini, 6, 0);
-    lv_obj_set_style_pad_column(mini, 6, 0);
-
-    make_search(mini);
-
-    lv_obj_t *refresh = lv_btn_create(mini);
+    lv_obj_t *refresh = lv_btn_create(parent);
     lv_obj_remove_style_all(refresh);
     lv_obj_set_size(refresh, 40, 40);
     lv_obj_set_style_radius(refresh, LV_RADIUS_CIRCLE, 0);
@@ -140,11 +141,13 @@ static lv_obj_t *make_mini(lv_obj_t *scr)
     lv_label_set_text(ricon, LV_SYMBOL_REFRESH);
     lv_obj_set_style_text_color(ricon, lv_color_hex(0xCCCCCC), 0);
     lv_obj_center(ricon);
+}
 
-    lv_obj_t *info = lv_obj_create(mini);
+// Creates the tappable title/artist block that opens Now Playing
+static lv_obj_t *make_info(lv_obj_t *parent)
+{
+    lv_obj_t *info = lv_obj_create(parent);
     lv_obj_remove_style_all(info);
-    lv_obj_set_height(info, lv_pct(100));
-    lv_obj_set_flex_grow(info, 1);
     lv_obj_clear_flag(info, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(info, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_flex_flow(info, LV_FLEX_FLOW_COLUMN);
@@ -162,10 +165,61 @@ static lv_obj_t *make_mini(lv_obj_t *scr)
     lv_obj_set_style_text_font(mini_artist, &opensans_16, 0);
     lv_obj_set_style_text_color(mini_artist, lv_color_hex(0xAAAAAA), 0);
     lv_label_set_text(mini_artist, "-");
+    return info;
+}
 
-    make_mini_btn(mini, LV_SYMBOL_PREV, "prev");
-    mini_pp = make_mini_btn(mini, LV_SYMBOL_PLAY, "playpause");
-    make_mini_btn(mini, LV_SYMBOL_NEXT, "next");
+// Creates the mini player at the bottom of the home screen
+static lv_obj_t *make_mini(lv_obj_t *scr)
+{
+    bool portrait = lv_disp_get_ver_res(NULL) > lv_disp_get_hor_res(NULL);
+
+    lv_obj_t *mini = lv_obj_create(scr);
+    lv_obj_remove_style_all(mini);
+    lv_obj_set_width(mini, lv_pct(100));
+    lv_obj_set_height(mini, portrait ? LV_SIZE_CONTENT : 54);
+    lv_obj_clear_flag(mini, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_radius(mini, 8, 0);
+    lv_obj_set_style_bg_opa(mini, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(mini, lv_color_hex(0x1E1E1E), 0);
+    lv_obj_set_style_pad_all(mini, 6, 0);
+    lv_obj_set_style_pad_column(mini, 6, 0);
+    lv_obj_set_style_pad_row(mini, 6, 0);
+    lv_obj_set_flex_flow(mini, portrait ? LV_FLEX_FLOW_COLUMN : LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(mini, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    if (portrait)
+    {
+        lv_obj_t *info = make_info(mini);
+        lv_obj_set_width(info, lv_pct(100));
+        lv_obj_set_height(info, LV_SIZE_CONTENT);
+
+        lv_obj_t *btns = lv_obj_create(mini);
+        lv_obj_remove_style_all(btns);
+        lv_obj_set_width(btns, lv_pct(100));
+        lv_obj_set_height(btns, LV_SIZE_CONTENT);
+        lv_obj_clear_flag(btns, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_flex_flow(btns, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(btns, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+        make_search(btns);
+        make_refresh(btns);
+        make_mini_btn(btns, LV_SYMBOL_PREV, "prev");
+        mini_pp = make_mini_btn(btns, LV_SYMBOL_PLAY, "playpause");
+        make_mini_btn(btns, LV_SYMBOL_NEXT, "next");
+    }
+    else
+    {
+        make_search(mini);
+        make_refresh(mini);
+
+        lv_obj_t *info = make_info(mini);
+        lv_obj_set_height(info, lv_pct(100));
+        lv_obj_set_flex_grow(info, 1);
+
+        make_mini_btn(mini, LV_SYMBOL_PREV, "prev");
+        mini_pp = make_mini_btn(mini, LV_SYMBOL_PLAY, "playpause");
+        make_mini_btn(mini, LV_SYMBOL_NEXT, "next");
+    }
     return mini;
 }
 
@@ -209,11 +263,28 @@ lv_obj_t *home_screen_create()
     lv_obj_set_style_radius(bar, 14, LV_PART_ITEMS);
     lv_obj_set_style_border_width(bar, 0, LV_PART_ITEMS);
     lv_obj_set_style_border_width(bar, 0, LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_pad_right(bar, 40, LV_PART_MAIN);
 
     feed_page = lv_tabview_add_tab(tv, L->tab_feed);
     playlists_page = lv_tabview_add_tab(tv, L->tab_playlists);
     setup_page(feed_page);
     setup_page(playlists_page);
+
+    lv_obj_t *gear = lv_btn_create(scr);
+    lv_obj_remove_style_all(gear);
+    lv_obj_set_size(gear, 32, 32);
+    lv_obj_set_style_radius(gear, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(gear, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(gear, lv_color_hex(0x272727), 0);
+    lv_obj_set_style_bg_color(gear, lv_color_hex(0x383838), LV_STATE_PRESSED);
+    lv_obj_add_flag(gear, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    lv_obj_align(gear, LV_ALIGN_TOP_RIGHT, 0, -1);
+    lv_obj_add_event_cb(gear, settings_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *gi = lv_label_create(gear);
+    lv_label_set_text(gi, LV_SYMBOL_SETTINGS);
+    lv_obj_set_style_text_color(gi, lv_color_hex(0xCCCCCC), 0);
+    lv_obj_center(gi);
 
     make_mini(scr);
 

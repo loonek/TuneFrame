@@ -7,7 +7,7 @@
 #include "ui_nav.h"
 #include "link.h"
 #include "ui_queue.h"
-#include "strings.h"
+#include "i18n.h"
 
 LV_FONT_DECLARE(opensans_16);
 
@@ -68,10 +68,16 @@ static lv_obj_t *make_ctrl_btn(lv_obj_t *parent, const char *symbol, const char 
 // Recognizes swipe gestures
 static void np_gesture_cb(lv_event_t *e)
 {
-    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-    if (dir == LV_DIR_BOTTOM) lv_scr_load(g_scr_home);
+    lv_indev_t *indev = lv_indev_get_act();
+    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+    if (dir == LV_DIR_BOTTOM)
+    {
+        lv_indev_wait_release(indev);
+        lv_scr_load(g_scr_home);
+    }
     else if (dir == LV_DIR_TOP)
     {
+        lv_indev_wait_release(indev);
         queue_begin();
         link_send_cmd("queue");
         lv_scr_load(g_scr_queue);
@@ -87,13 +93,18 @@ lv_obj_t *np_screen_create()
     lv_obj_set_style_pad_all(scr, 14, 0);
     lv_obj_add_event_cb(scr, np_gesture_cb, LV_EVENT_GESTURE, NULL);
 
-    lv_coord_t screen_h  = lv_disp_get_ver_res(NULL);
-    lv_coord_t btn_sz    = screen_h / 6;
-    lv_coord_t cover_sz  = screen_h - 72;
+    lv_coord_t hor = lv_disp_get_hor_res(NULL);
+    lv_coord_t ver = lv_disp_get_ver_res(NULL);
+    bool portrait = ver > hor;
+    lv_coord_t short_side = portrait ? hor : ver;
 
-    lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW);
+    lv_coord_t btn_sz    = short_side / 6;
+    lv_coord_t cover_sz  = short_side - 72;
+
+    lv_obj_set_flex_flow(scr, portrait ? LV_FLEX_FLOW_COLUMN : LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(scr, 16, 0);
+    lv_obj_set_style_pad_row(scr, 16, 0);
 
     art_buf = (uint8_t *)ps_malloc((size_t)ART_MAX * ART_MAX * 2);
     art_dsc.header.always_zero = 0;
@@ -113,8 +124,9 @@ lv_obj_t *np_screen_create()
     lv_obj_t *col = lv_obj_create(scr);
     lv_obj_remove_style_all(col);
     lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_height(col, lv_pct(100));
     lv_obj_set_flex_grow(col, 1);
+    if (portrait) lv_obj_set_width(col, lv_pct(100));
+    else          lv_obj_set_height(col, lv_pct(100));
     lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(col, 8, 0);

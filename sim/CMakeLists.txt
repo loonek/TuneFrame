@@ -14,13 +14,16 @@ add_executable(sim
     ${CMAKE_CURRENT_SOURCE_DIR}/lv_sim_main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/link_stub.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/serial_tcp.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/settings_store_stub.cpp
     ${ROOT}/src/ui_home.cpp
     ${ROOT}/src/ui_now_playing.cpp
     ${ROOT}/src/link.cpp
-    ${ROOT}/src/strings.cpp
+    ${ROOT}/src/i18n.cpp
     ${ROOT}/src/opensans_16.c
     ${ROOT}/src/icons.c
     ${ROOT}/src/ui_queue.cpp
+    ${ROOT}/src/ui_settings.cpp
+    ${ROOT}/src/ui_playlist.cpp
     ${LVGL_SRC}
 )
 

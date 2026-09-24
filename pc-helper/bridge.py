@@ -26,6 +26,7 @@ _cmd_out = queue.Queue()
 _feed_out = queue.Queue()
 _stop = threading.Event()
 _queue_out = queue.Queue()
+_playlist_out = queue.Queue()
 
 # Saves latest "now playing" under lock
 def set_latest_np(np):
@@ -136,6 +137,18 @@ def send_queue(ser, q):
             }
             ser.write((json.dumps(row, ensure_ascii=False) + "\n").encode("utf-8"))
         ser.write(b'{"t":"qe"}\n')
+    except pyserial.SerialTimeoutException:
+        return
+
+# Steams a playlist's tracks to serial as pb/pi/pe
+def send_playlist(ser, pl):
+    try:
+        head = {"t": "pb", "title": pl.get("title", "")}
+        ser.write((json.dumps(head, ensure_ascii=False) + "\n").encode("utf-8"))
+        for it in pl.get("items", []):
+            row = {"t": "pi", "title": it.get("title", ""), "sub": it.get("sub", "")}
+            ser.write((json.dumps(row, ensure_ascii=False) + "\n").encode("utf-8"))
+        ser.write(b'{"t":"pe"}\n')
     except pyserial.SerialTimeoutException:
         return
 
@@ -259,6 +272,13 @@ def serial_worker(port, baud, tcp):
         if q:
             send_queue(ser, q)
 
+        try:
+            pl = _playlist_out.get_nowait()
+        except queue.Empty:
+            pl = None
+        if pl:
+            send_playlist(ser, pl)
+
         np = get_latest_np()
         now = time.monotonic()
         if np and now - last_push >= NP_PERIOD:
@@ -297,6 +317,8 @@ async def ws_handler(ws):
                 _feed_out.put(msg)
             elif msg.get("t") == "queue":
                 _queue_out.put(msg)
+            elif msg.get("t") == "playlist":
+                _playlist_out.put(msg)
     finally:
         _ws_clients.discard(ws)
         print("[bridge] extension disconnected", file=sys.stderr)

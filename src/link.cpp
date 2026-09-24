@@ -17,6 +17,9 @@ static feed_thumb_end_t   feed_thumb_end_cb = nullptr;  // Callback for feed thu
 static queue_begin_t      queue_begin_cb = nullptr;     // Callback for queue begin 
 static queue_item_t       queue_item_cb = nullptr;      // Callback for queue items
 static queue_end_t        queue_end_cb = nullptr;       // Callback for queue end
+static playlist_begin_t playlist_begin_cb = nullptr;
+static playlist_item_t  playlist_item_cb = nullptr;
+static playlist_end_t   playlist_end_cb = nullptr;
 
 static const size_t ART_CHUNK = 4096;           // Size of chunks to read artwork data in
 
@@ -56,6 +59,14 @@ void link_on_queue(queue_begin_t begin, queue_item_t item, queue_end_t end)
     queue_begin_cb = begin;
     queue_item_cb = item;
     queue_end_cb = end;
+}
+
+// Sets the callbacks for playlist events
+void link_on_playlist(playlist_begin_t begin, playlist_item_t item, playlist_end_t end)
+{
+    playlist_begin_cb = begin;
+    playlist_item_cb = item;
+    playlist_end_cb = end;
 }
 
 // Sets the callbacks for feed thumbnail events
@@ -148,6 +159,18 @@ void link_task()
                 {
                     queue_end_cb();
                 }
+                else if (strcmp(t, "pb") == 0 && playlist_begin_cb)
+                {
+                    playlist_begin_cb(doc["title"] | "");
+                }
+                else if (strcmp(t, "pi") == 0 && playlist_item_cb)
+                {
+                    playlist_item_cb(doc["title"] | "", doc["sub"] | "");
+                }
+                else if (strcmp(t, "pe") == 0 && playlist_end_cb)
+                {
+                    playlist_end_cb();
+                }
             }
             line_len = 0;
         }
@@ -181,5 +204,13 @@ void link_send_qjump(int index)
 {
     Serial.print("{\"t\":\"cmd\",\"a\":\"qjump\",\"id\":\"");
     Serial.print(index);
+    Serial.println("\"}");
+}
+
+// Sends a request to open a playlist's tracks by playlistId
+void link_send_playlist(const char *id)
+{
+    Serial.print("{\"t\":\"cmd\",\"a\":\"playlist\",\"id\":\"");
+    Serial.print(id);
     Serial.println("\"}");
 }

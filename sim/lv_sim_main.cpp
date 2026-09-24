@@ -9,8 +9,10 @@
 #include "ui_home.h"
 #include "ui_now_playing.h"
 #include "ui_queue.h"
+#include "ui_settings.h"
 #include "ui_nav.h"
 #include "link.h"
+#include "ui_playlist.h"
 
 #define SCALE 2
 
@@ -146,6 +148,8 @@ int main(int argc, char **argv)
     g_scr_np = np_screen_create();
     g_scr_home = home_screen_create();
     g_scr_queue = queue_screen_create();
+    g_scr_settings = settings_screen_create();
+    g_scr_playlist = playlist_screen_create();
     lv_scr_load(g_scr_home);
 
     bool live = (argc > 1 && strcmp(argv[1], "live") == 0);
@@ -157,6 +161,7 @@ int main(int argc, char **argv)
         link_on_feed(feed_begin, feed_section, feed_item, feed_end);
         link_on_feed_thumb(feed_thumb_begin, feed_thumb_end);
         link_on_queue(queue_begin, queue_item, queue_end);
+        link_on_playlist(playlist_begin, playlist_item, playlist_end);
     }
     else
     {

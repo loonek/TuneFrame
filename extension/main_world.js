@@ -396,8 +396,50 @@
     return out;
   }
 
+// Fetches a playlist's tracks by playlistId
+async function fetchPlaylist(id)
+{
+  const key = window.ytcfg && window.ytcfg.get ? window.ytcfg.get("INNERTUBE_API_KEY") : null;
+  const ctx = window.ytcfg && window.ytcfg.get ? window.ytcfg.get("INNERTUBE_CONTEXT") : null;
+  if (!key || !ctx || !id) return { t: "playlist", title: "", items: [] };
+  const headers = await authHeaders();
+  const vl = id.startsWith("VL") ? id : "VL" + id;
+  const resp = await browse(key, headers, { context: ctx, browseId: vl });
+
+  const two = (resp.contents || {}).twoColumnBrowseResultsRenderer || {};
+
+  let title = "";
+  try
+  {
+    const hdr = two.tabs[0].tabRenderer.content.sectionListRenderer.contents[0].musicEditablePlaylistDetailHeaderRenderer.header;
+    title = firstRun((hdr.musicDetailHeaderRenderer || hdr.musicResponsiveHeaderRenderer).title);
+  }
+  catch (e) {}
+
+  let shelf = null;
+  try
+  {
+    const sl = two.secondaryContents.sectionListRenderer.contents;
+    shelf = (sl.find((s) => s.musicPlaylistShelfRenderer) || {}).musicPlaylistShelfRenderer;
+  }
+  catch (e) {}
+
+  const items = [];
+  if (shelf)
+  {
+    for (const c of shelf.contents || [])
+    {
+      if (!c.musicResponsiveListItemRenderer) continue;
+      const it = parseListRow(c.musicResponsiveListItemRenderer);
+      if (it.title) items.push({ title: it.title, sub: it.sub });
+    }
+  }
+  return { t: "playlist", title: title, items: items.slice(0, 100) };
+}
+
   window.ytmcFeed = fetchFeed;
   window.ytmcQueue = readQueue;
+  window.ytmcPlaylist = fetchPlaylist;
 
   // Cyclically sends readNowPlaying() upwards
   setInterval(() =>
@@ -425,6 +467,13 @@
     else if (d.payload.t === "cmd" && d.payload.a === "queue")
     {
       window.postMessage({  source: "ytmc", dir: "up", payload: readQueue() }, "*");
+    }
+    else if (d.payload.t === "cmd" && d.payload.a === "playlist")
+    {
+      fetchPlaylist(d.payload.id).then((pl) =>
+      {
+        window.postMessage({ source: "ytmc", dir: "up", payload: pl}, "*");
+      });
     }
     else if (d.payload.t === "cmd")
     {
