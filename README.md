@@ -2,8 +2,8 @@
 
 A little touchscreen that sits on your desk and shows what's playing on YouTube
 Music - cover art, progress, your feed and playlists - and lets you tap to
-control it. It runs on a cheap [Guition JC4827W543](https://www.google.com/search?q=JC4827W543)
-board (ESP32-S3 + a 4.3" 480x272 touchscreen).
+control it. It runs on a [Guition JC4827W543](https://pl.aliexpress.com/item/1005006729377800.html)
+board (ESP32-S3 + a 4.3" 480x272 **capacitive** touchscreen).
 
 <p align="center">
   <img src="assets/nowplaying.png" width="440" alt="TuneFrame now playing screen">
@@ -56,10 +56,11 @@ extension only ever touches `music.youtube.com`.
 I will list supported browsers when I get them tested and work on any kinks that show up.
 
 ### 2. Bridge
-Grab the bridge app from the [latest release](https://github.com/loonek/TuneFrame/releases)
-and run it. It auto-detects the board's USB port; right-click the tray icon 
-for **Reconnect**, **Port**, **Diagnostics** window and a **Run on startup** 
-toggle. Rather run it from source? See [`pc-helper/`](pc-helper/).
+Download `tuneframe-bridge.zip` from the [latest release](https://github.com/loonek/TuneFrame/releases),
+unzip it and run `tuneframe-bridge.exe`. It sits in the system tray and
+auto-detects the board's USB port; right-click the icon for **Reconnect**,
+**Port**, a **Diagnostics** window and a **Run on startup** toggle. Rather run it
+from source? See [`pc-helper/`](pc-helper/).
 
 ### 3. Firmware
 Flash it straight from your browser:
@@ -80,6 +81,10 @@ yourself, see [`sim/`](sim/).
 - **Bridge** - Python 3.9+: `pip install -r pc-helper/requirements.txt` then `python pc-helper/bridge.py`
 - **Simulator** - MSYS2 UCRT64 + CMake + SDL2 (details in [`sim/`](sim/))
 
+## Case
+Due to space constraints I'm not able to have my own 3D printer, hence the prototyping takes some time.
+First I plan to finish the design of a plain one, then work on supporting external buttons for easier, tactile navigation.
+
 ## Testing without a board
 
 You can exercise the whole chain (extension -> bridge -> display) with no
@@ -96,9 +101,9 @@ back in the tab. This is also how the extension can be reviewed without the boar
 
 - The bundled font is Latin-only, so non-Latin titles (Cyrillic, CJK, ...) show
   up as little empty boxes. It's due to the board's memory size, and I haven't gotten to think about it yet.
-- All three parts have to be running together, but it seems that the extension is naturaly a weak link.
+- All three parts have to be running together, but it seems that the extension is naturally a weak link.
   Most issues with connection are solved by reloading the YouTube Music page.
-- Tested mostly on Opera.
+- Tested mostly on the Opera browser and the capacitive-touch version of the board.
 
 ## Privacy
 
