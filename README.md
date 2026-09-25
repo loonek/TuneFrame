@@ -1,5 +1,9 @@
 # TuneFrame
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/loonek/TuneFrame)](https://github.com/loonek/TuneFrame/releases)
+[![Flash in browser](https://img.shields.io/badge/flash-in%20browser-e00)](https://loonek.github.io/TuneFrame/)
+
 A little touchscreen that sits on your desk and shows what's playing on YouTube
 Music - cover art, progress, your feed and playlists - and lets you tap to
 control it. It runs on a [Guition JC4827W543](https://pl.aliexpress.com/item/1005006729377800.html)
