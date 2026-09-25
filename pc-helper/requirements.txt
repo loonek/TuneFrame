@@ -4,6 +4,6 @@ pyserial
 Pillow
 pystray
 
-# Build-time only (for packaging into an .exe):
-#   pip install pyinstaller
-#   pyinstaller jc-music-bridge.spec
+# Build-time only (to package into a standalone exe, clean of AV false positives):
+#   pip install nuitka
+#   powershell -ExecutionPolicy Bypass -File build_bridge.ps1

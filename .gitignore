@@ -14,6 +14,7 @@ pc-helper/.venv/
 __pycache__/
 *.pyc
 dist/
+dist_nuitka/
 
 # Store screenshot working folders
 scripts/shots_in/

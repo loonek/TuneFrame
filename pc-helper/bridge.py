@@ -421,10 +421,14 @@ def run_async(args):
     except OSError as e:
         log(f"server error (is another bridge running?): {e}")
 
-# Resolves a bundled resource path (works in dev and in the PyInstaller exe)
+# Resolves a bundled resource path (dev, PyInstaller and Nuitka)
 def resource_path(name):
-    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base, name)
+    for base in (getattr(sys, "_MEIPASS", None),
+                 os.path.dirname(sys.executable),
+                 os.path.dirname(os.path.abspath(__file__))):
+        if base and os.path.exists(os.path.join(base, name)):
+            return os.path.join(base, name)
+    return name
 
 # Loads the tray icon (the app logo), falling back to a plain dot
 def make_icon_image():
