@@ -69,6 +69,13 @@
     location.assign(path);
   }
 
+  // Sets the player volume and remembers it so it survives a navigation
+  function setVol(mp, nv)
+  {
+    mp.setVolume(nv);
+    try { localStorage.setItem("ytmcVol", String(nv)); } catch (e) {}
+  }
+
   // Executes esp's commands
   function executeCommand(action, id, kind)
   {
@@ -87,7 +94,7 @@
       if (v < 5) nv = 5;
       else if (v < 10) nv = 10;
       else nv = Math.min(100, Math.floor(v / 10) * 10 + 10);
-      mp.setVolume(nv);
+      setVol(mp, nv);
     }
     else if (action === "vol_down")
     {
@@ -95,7 +102,7 @@
       let nv;
       if (v <= 10) nv = Math.max(0, v - 1);
       else nv = Math.max(0, Math.ceil(v / 10) * 10 - 10);
-      mp.setVolume(nv);
+      setVol(mp, nv);
     }
     else if (action === "play" && id)
     {
@@ -496,6 +503,29 @@ async function fetchPlaylist(id)
           setTimeout(() => document.querySelector(".next-button")?.click(), 500);
         }
         else if (++tries > 80) clearInterval(iv);
+      }, 250);
+    }
+  }
+  catch (e) {}
+
+  // Re-applies the display-set volume once the player is ready, since a navigation
+  // otherwise restores YouTube Music's own saved volume
+  try
+  {
+    const savedVol = localStorage.getItem("ytmcVol");
+    if (savedVol !== null)
+    {
+      let vtries = 0;
+      const viv = setInterval(() =>
+      {
+        const mp = document.getElementById("movie_player");
+        const v = document.querySelector("video");
+        if (mp && mp.setVolume && v && v.duration > 0)
+        {
+          mp.setVolume(parseInt(savedVol, 10));
+          clearInterval(viv);
+        }
+        else if (++vtries > 80) clearInterval(viv);
       }, 250);
     }
   }
