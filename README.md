@@ -121,3 +121,14 @@ third party. Full text: [privacy policy](https://loonek.github.io/TuneFrame/priv
 
 [GPL-3.0](LICENSE) - free to use, tinker with and share; any distributed
 version has to stay open under the same license.
+
+## Disclaimer
+
+TuneFrame is an independent, unofficial project. It is not affiliated with,
+authorized by, endorsed by, or connected to Google LLC, YouTube, or YouTube Music.
+
+"Google", "YouTube" and "YouTube Music", along with related names and logos, are
+trademarks of their respective owners and are used here for identification only.
+
+TuneFrame is provided "as is", without warranty of any kind; you use it at your own
+risk (see the [GPL-3.0 license](LICENSE), sections 15 and 16).
