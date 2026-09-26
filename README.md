@@ -3,6 +3,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/loonek/TuneFrame)](https://github.com/loonek/TuneFrame/releases)
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-e00)](https://loonek.github.io/TuneFrame/)
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/kgipfipidjcmkkcejpfnfkekbcnmjpnh?label=Chrome%20Web%20Store)](https://chromewebstore.google.com/detail/kgipfipidjcmkkcejpfnfkekbcnmjpnh)
 
 A little touchscreen that sits on your desk and shows what's playing on YouTube
 Music - cover art, progress, your feed and playlists - and lets you tap to
@@ -54,8 +55,9 @@ couldn't find a nicer way around the login/DRM wall. The upside: it works.
 All three parts run on the same PC.
 
 ### 1. Extension
-Install **TuneFrame** from the Chrome Web Store *(link coming once it's
-approved)*, then open `music.youtube.com` and sign in. The
+Install **TuneFrame** from the
+[Chrome Web Store](https://chromewebstore.google.com/detail/kgipfipidjcmkkcejpfnfkekbcnmjpnh),
+then open `music.youtube.com` and sign in. The
 extension only ever touches `music.youtube.com`. 
 I will list supported browsers when I get them tested and work on any kinks that show up.
 
