@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TuneFrame",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Mirrors your YouTube Music now-playing, feed and playlists to a JC4827W543 touchscreen, and sends taps back to control playback.",
   "icons": {
     "16": "icon16.png",
