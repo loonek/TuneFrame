@@ -3,7 +3,8 @@
 !.vscode/extensions.json
 *.bin
 *.elf
-!docs/firmware.factory.bin   # keep the flasher's firmware in the repo
+# keep the flasher's firmware in the repo
+!docs/firmware.factory.bin
 
 # CMake / simulator build output
 build/
