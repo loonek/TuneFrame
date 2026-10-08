@@ -10,6 +10,9 @@ Music - cover art, progress, your feed and playlists - and lets you tap to
 control it. It runs on a [Guition JC4827W543](https://pl.aliexpress.com/item/1005006729377800.html)
 board (ESP32-S3 + a 4.3" 480x272 **capacitive** touchscreen).
 
+**I wasn't able to test the resistive version of Guition JC4827W543, but AFAIK
+this project probably won't run on it**
+
 <p align="center">
   <img src="assets/nowplaying.png" width="440" alt="TuneFrame now playing screen">
 </p>
